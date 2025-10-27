@@ -22,6 +22,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "CanBus.hpp"
+#include "CanFrames.hpp"
+#include "BmsFleet.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +43,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan1;
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
@@ -50,6 +53,8 @@ CAN_HandleTypeDef hcan1;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_CAN1_Init(void);
+static void MX_USART2_UART_Init(void);
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -59,6 +64,7 @@ static void MX_CAN1_Init(void);
 extern CAN_HandleTypeDef hcan1;
 static CanBus can(hcan1);
 
+static BmsFleet fleet;
 
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
@@ -76,45 +82,74 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 int main(void)
 {
 
-  /* USER CODE BEGIN 1 */
+	/* USER CODE BEGIN 1 */
 
-  /* USER CODE END 1 */
+	/* USER CODE END 1 */
 
-  /* MCU Configuration--------------------------------------------------------*/
+	/* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+	HAL_Init();
 
-  /* USER CODE BEGIN Init */
+	/* USER CODE BEGIN Init */
 
-  /* USER CODE END Init */
+	/* USER CODE END Init */
 
-  /* Configure the system clock */
-  SystemClock_Config();
+	/* Configure the system clock */
+	SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
+	/* USER CODE BEGIN SysInit */
 
-  /* USER CODE END SysInit */
+	/* USER CODE END SysInit */
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_CAN1_Init();
-  /* USER CODE BEGIN 2 */
+	/* Initialize all configured peripherals */
+	MX_GPIO_Init();
+	MX_CAN1_Init();
+	MX_USART2_UART_Init();
+	/* USER CODE BEGIN 2 */
 
-  can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
-  can.start();
-  /* USER CODE END 2 */
+	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
+	can.start();
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+	fleet.register_node(0x07, 0);     // daughter 0 uses std ID 0x101
 
-      CanBus::Frame f;
-      if (can.read(f)) {
-    	  HAL_GPIO_TogglePin(GPIOB, OK_Pin);
-      }
-	   can.sendStd(0x05, {0x02,0x67}, 2);
+	/* USER CODE END 2 */
+
+	/* Infinite loop */
+	/* USER CODE BEGIN WHILE */
+	while (1)
+	{
+
+		CanBus::Frame rx;
+		if (can.read(rx)) {
+			fleet.handle(rx, HAL_GetTick());
+			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+		}
+		/*
+		if (can.read(rx) && rx.id == CanFrames::BMS_CAN_ID) {
+			switch (CanFrames::getType(rx.data)) {
+			case CanFrames::HIGH_TEMP: {
+				float temp; uint8_t idx;
+				CanFrames::decodeHighTemp(rx.data, temp, idx);
+				// use temp, idx
+				break;
+			}
+			case CanFrames::VOLTAGE_EXTREMES: {
+				uint16_t hi, lo; uint8_t loIdx, hiIdx;
+				CanFrames::decodeVoltageExtremes(rx.data, hi, lo, loIdx, hiIdx);
+				break;
+			}
+			case CanFrames::AVERAGES: {
+				float avgT; uint16_t avgV; uint8_t cells;
+				CanFrames::decodeAverages(rx.data, avgT, avgV, cells);
+				break;
+			}
+			}
+			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+		}
+		*/
+
+
 
 
     /* USER CODE END WHILE */
@@ -200,20 +235,43 @@ static void MX_CAN1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN1_Init 2 */
-  CAN_FilterTypeDef canfilterconfig;
 
-  	canfilterconfig.FilterActivation = CAN_FILTER_ENABLE;
-  	canfilterconfig.FilterBank = 0;  // which filter bank to use from the assigned ones
-  	canfilterconfig.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-  	canfilterconfig.FilterIdHigh = 0x000<<5;
-  	canfilterconfig.FilterIdLow = 0;
-  	canfilterconfig.FilterMaskIdHigh = 0x000<<5;
-  	canfilterconfig.FilterMaskIdLow = 0x0000;
-  	canfilterconfig.FilterMode = CAN_FILTERMODE_IDMASK;
-  	canfilterconfig.FilterScale = CAN_FILTERSCALE_32BIT;
-
-  	HAL_CAN_ConfigFilter(&hcan1, &canfilterconfig);
   /* USER CODE END CAN1_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -229,8 +287,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(OK_GPIO_Port, OK_Pin, GPIO_PIN_RESET);
