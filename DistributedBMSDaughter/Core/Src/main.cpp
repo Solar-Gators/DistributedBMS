@@ -1,4 +1,4 @@
-/* USER CODE BEGIN Header */
+//* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * @file           : main.c
@@ -21,10 +21,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "BQ76920.hpp"
-#include "NRF24.hpp"
+//Drivers
 #include "BQ7692000.hpp"
-#include "math.h"
+#include "CanBus.hpp"
+//Data handlers
+#include "BMS.hpp"
+//C++ stuff
 #include <array>
 #include <cstring>
 #include <cstdio>
@@ -79,151 +81,24 @@ static void MX_USB_PCD_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+//creating classes
+BQ7692000PW bq(&hi2c2);
+BMS bms(4); // 4-cell configuration
+extern CAN_HandleTypeDef hcan1;
+static CanBus can(hcan1);
 
-union FloatToBytes {
-    float value;
-    uint8_t bytes[sizeof(float)];
-};
-
-union IntToBytes {
-    uint16_t value;
-    uint8_t bytes[2];
-};
-
-//tempature DMA variables
+//ADC dma stuff
 bool TempDMAComplete;
-volatile uint16_t adc_buf[ADC_NUM_CONVERSIONS];
 float adc_vals[ADC_NUM_CONVERSIONS];
-//tempature DMA callback
+volatile uint16_t adc_buf[ADC_NUM_CONVERSIONS];
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	//move data between buffer arrays
 	TempDMAComplete = true;
 }
 
+uint8_t payload[8] = {0x4, 0x14, 0x17, 0x67,0x4, 0x14, 0x17, 0x67};
 
-//Radio Object
-NRF24 nrf(&hspi1, GPIOB, GPIO_PIN_1, GPIOB, GPIO_PIN_2);
-//BMS IC object
-BQ7692000PW bq(&hi2c2);
-
-typedef struct{
-  uint16_t voltages[5];
-  uint16_t averageVoltage;
-  uint16_t highCellVoltage;
-  uint16_t lowCellVoltage;
-  uint8_t  highCellIndex;
-  uint8_t  lowCellIndex;
-
-
-  float tempature_volages[5];
-  float temps[5];
-  float averageTemp;
-  float highTemp;
-  uint8_t  highTempIndex;
-
-  uint8_t  sectionNum;
-  uint8_t  numCells;
-  uint8_t  cell_enable_mask;
-
-  uint32_t temp;
-
-}battery_data_t;
-
-static battery_data_t e_module = {0};
-FloatToBytes converter;
-IntToBytes converter2;
-
-float TempConverter(float v_out) {
-    if(v_out < 0.001f) return 999.0f;
-
-    float r_therm = (33.0f / v_out) - 10.0f;
-
-    float A = 0.002687481f;
-    float B = 0.0002829040f;
-    float C = 0.000001183565f;
-
-    float logR = logf(r_therm);
-    float temp = 1.0f / (A + B*logR + C*logR*logR*logR) - 273.15f;
-
-    return temp;
-}
-static inline uint8_t cell_enabled(uint8_t mask, uint8_t idx)
-{
-	return (uint8_t)((mask >> idx) & 0x1);
-}
-
-void processData(battery_data_t *dataStruct)
-{
-	uint8_t i;
-	uint32_t sumV = 0;
-	uint16_t maxV = 0;
-	uint16_t minV = 65535;
-	uint8_t maxVindex = 0;
-	uint8_t minVindex = 0;
-	uint8_t used_count = 0;
-	uint8_t found_first = 0;
-
-	float sumT = 0.0f;
-	float maxT = -1000.0f;
-	uint8_t maxTindex = 0;
-
-	/* --- Cell Voltages (respect mask) --- */
-	for(i = 0; i < 5; i++)
-	{
-		if(!cell_enabled(dataStruct->cell_enable_mask, i)) continue;
-
-		uint16_t v = dataStruct->voltages[i];
-		sumV += v;
-		used_count++;
-
-		if(!found_first) {
-			minV = v;
-			maxV = v;
-			minVindex = i;
-			maxVindex = i;
-			found_first = 1;
-		} else {
-			if(v > maxV) { maxV = v; maxVindex = i; }
-			if(v < minV) { minV = v; minVindex = i; }
-		}
-	}
-
-	if(used_count == 0) {
-		dataStruct->averageVoltage  = 0;
-		dataStruct->highCellVoltage = 0;
-		dataStruct->lowCellVoltage  = 0;
-		dataStruct->highCellIndex   = 0;
-		dataStruct->lowCellIndex    = 0;
-	} else {
-		dataStruct->averageVoltage  = (uint16_t)(sumV / used_count);
-		dataStruct->highCellVoltage = maxV;
-		dataStruct->lowCellVoltage  = minV;
-		dataStruct->highCellIndex   = maxVindex;
-		dataStruct->lowCellIndex    = minVindex;
-	}
-
-	dataStruct->temp = sumV; /* optional scratch/debug like before */
-
-	/* --- Temperatures (unchanged) --- */
-	for(i = 0; i < ADC_NUM_CONVERSIONS; i++)
-	{
-		dataStruct->tempature_volages[i] = adc_vals[i];
-		dataStruct->temps[i] = TempConverter(adc_vals[i]);
-		sumT += dataStruct->temps[i];
-
-		if(dataStruct->temps[i] > maxT)
-		{
-			maxT = dataStruct->temps[i];
-			maxTindex = i;
-		}
-	}
-
-	dataStruct->averageTemp   = sumT / ADC_NUM_CONVERSIONS;
-	dataStruct->highTemp      = maxT;
-	dataStruct->highTempIndex = maxTindex;
-}
-
-
+/*
 void setupCANMessage(uint8_t type, uint8_t* msg, battery_data_t *dataStruct){
 	if(type == 0){
 		msg[0] = 0;
@@ -264,19 +139,14 @@ void setupCANMessage(uint8_t type, uint8_t* msg, battery_data_t *dataStruct){
 	}
 
 }
+*/
 // Can reception
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan1)
+extern "C" void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* /*hcan*/)
 {
-  uint8_t RxData[8] = { 0 };  // Array to store the received data
-  CAN_RxHeaderTypeDef RxHeader;
-  if (HAL_CAN_GetRxMessage(hcan1, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
+    if (auto* cb = CanBus::isr_instance()) {
+        cb->onRxFifo0Pending();
+    }
 }
-
-
 
 /* USER CODE END 0 */
 
@@ -320,51 +190,14 @@ int main(void)
 	MX_USB_PCD_Init();
 	/* USER CODE BEGIN 2 */
 
-
-	e_module.sectionNum = 0;
-	e_module.numCells = 4;
-	e_module.cell_enable_mask = 0b10111;
-
-	HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
-	HAL_NVIC_SetPriority(CAN1_RX0_IRQn, 5, 0);
-	HAL_NVIC_EnableIRQ(CAN1_RX0_IRQn);
-	HAL_CAN_Start(&hcan1);
-
-
-
+	//CAN Config
+	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
+	can.start();
     if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
     {
 	    Error_Handler();
     }
 
-	int HAL_CAN_BUSY = 0;
-	uint64_t messages_sent = 0;
-
-	CAN_TxHeaderTypeDef TxHeader = { 0 };
-	uint8_t TxData[8] = { 0 };
-	uint32_t TxMailbox = { 0 };
-
-	TxHeader.IDE = CAN_ID_STD; // Standard ID (not extended)
-	TxHeader.StdId = 0x07; // 11 bit Identifier
-	TxHeader.RTR = CAN_RTR_DATA; // Std RTR Data frame
-	TxHeader.DLC = 8; // 8 bytes being transmitted
-
-	//Message ID 2 for VCU
-
-
-	//static uint8_t addr[5] = { 'N','O','D','E','1' };
-	//uint8_t payload[8];
-
-	//nrf.init();
-
-	//if (nrf.selfTest()) {
-	//  HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
-	//  HAL_Delay(500);
-	//} else {
-	//  HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
-	//}
-	//nrf.setTxMode(addr, 76); // channel 76
-	//uint32_t ctr = 0;
 
 
     while (bq.init() != HAL_OK)
@@ -378,18 +211,22 @@ int main(void)
 	uint16_t packVoltage = 0;
 	uint16_t dieTemp = 0;
 	std::array<uint16_t, CELL_COUNT> cellVoltages{};
+	std::array<uint16_t, CELL_COUNT> cellTempADC{};
 
 
 	TempDMAComplete = false;
-
-
-
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
+		//process recived CAN stuff
+        CanBus::Frame f;
+        if (can.read(f)) {
+            // process f
+        }
+
 	//Voltage Data
 
 		// Get pack voltage
@@ -406,22 +243,24 @@ int main(void)
 			  HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
 			}
 		}
-
+		/*
 		if(e_module.numCells == 4){
 			e_module.voltages[0] = cellVoltages[0];
 			e_module.voltages[1] = cellVoltages[1];
 			e_module.voltages[2] = cellVoltages[2];
 			e_module.voltages[4] = cellVoltages[4];
 		}
-
+		*/
 	//Collect Tempature Data
 
 		//external tempatures
 		TempDMAComplete = false;
 		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
 		while(TempDMAComplete == false){};
+
 		for(uint8_t i = 0; i < 5; i++){
-			adc_vals[i] = 3.3*((float)adc_buf[i] / 4096);
+			//adc_vals[i] = 3.3*((float)adc_buf[i] / 4096);
+			cellTempADC[i] = adc_buf[i];
 		}
 
 
@@ -437,37 +276,25 @@ int main(void)
 	//wait for call from host
 
 
-		processData(&e_module);
-		for(int i = 0; i < 3; i++){
-			setupCANMessage(i,TxData, &e_module);
-
-			while(!HAL_CAN_GetTxMailboxesFreeLevel(&hcan1));
-			HAL_StatusTypeDef status2;
-			status2 = HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox);
-			messages_sent++;
-			if (status2 == HAL_ERROR){
-				Error_Handler();
-			}
-			else if(status2 == HAL_BUSY){
-				HAL_CAN_BUSY++;
-			}
-		}
 
 
 
 
 
 
-	//memcpy(payload, &ctr, 4);
-	//memset(payload + 4, 0, 4);
-	//bool ok = nrf.sendData(payload, sizeof(payload));
 
+	    bms.set_cell_mV(cellVoltages);
+	    bms.set_ntc_counts(cellTempADC);
+	    bms.update();
+
+	    auto res = bms.results();
+
+		(void)can.sendStd(0x07, payload, 8);
 
 	// Blink if send ok
 	HAL_GPIO_TogglePin(GPIOB, OK_Pin);
 	HAL_Delay(250);
 	//set fault LED and write to EEPROM
-
 
 
 	/* USER CODE END WHILE */
