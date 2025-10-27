@@ -26,6 +26,7 @@
 #include "CanBus.hpp"
 //Data handlers
 #include "BMS.hpp"
+#include "CanFrame.cpp"
 //C++ stuff
 #include <array>
 #include <cstring>
@@ -81,7 +82,8 @@ static void MX_USB_PCD_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-//creating classes
+
+//creating classes for BMS stuff
 BQ7692000PW bq(&hi2c2);
 BMS bms(4); // 4-cell configuration
 extern CAN_HandleTypeDef hcan1;
@@ -96,50 +98,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	TempDMAComplete = true;
 }
 
-uint8_t payload[8] = {0x4, 0x14, 0x17, 0x67,0x4, 0x14, 0x17, 0x67};
 
-/*
-void setupCANMessage(uint8_t type, uint8_t* msg, battery_data_t *dataStruct){
-	if(type == 0){
-		msg[0] = 0;
-		converter.value = dataStruct->highTemp;
-		for(int i = 1; i < 5; i++){
-			msg[i] = converter.bytes[i-1];
-		}
-		msg[5] = dataStruct->highTempIndex;
-		msg[6] = 0;
-		msg[7] = 0;
-	}
-	if(type == 1){
-		msg[0] = 1;
-		converter2.value = dataStruct->highCellVoltage;
-		msg[1] = converter2.bytes[0];
-		msg[2] = converter2.bytes[1];
-
-		converter2.value = dataStruct->lowCellVoltage;
-		msg[3] = converter2.bytes[0];
-		msg[4] = converter2.bytes[1];
-
-		msg[5] = dataStruct->lowCellIndex;
-		msg[6] = dataStruct->highCellIndex;
-
-		msg[7] = 0;
-	}
-	if(type == 2){
-		msg[0] = 2;
-		converter.value = dataStruct->averageTemp;
-		for(int i = 1; i < 5; i++){
-			msg[i] = converter.bytes[i-1];
-		}
-
-		converter2.value = dataStruct->averageVoltage;
-		msg[5] = converter2.bytes[0];
-		msg[6] = converter2.bytes[1];
-		msg[7] = dataStruct->numCells;
-	}
-
-}
-*/
 // Can reception
 extern "C" void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* /*hcan*/)
 {
@@ -198,8 +157,7 @@ int main(void)
 	    Error_Handler();
     }
 
-
-
+    //initalize BMS stuff
     while (bq.init() != HAL_OK)
     {
         // Error handling
@@ -207,7 +165,7 @@ int main(void)
     }
     HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
 
-
+    //Data
 	uint16_t packVoltage = 0;
 	uint16_t dieTemp = 0;
 	std::array<uint16_t, CELL_COUNT> cellVoltages{};
@@ -243,14 +201,7 @@ int main(void)
 			  HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
 			}
 		}
-		/*
-		if(e_module.numCells == 4){
-			e_module.voltages[0] = cellVoltages[0];
-			e_module.voltages[1] = cellVoltages[1];
-			e_module.voltages[2] = cellVoltages[2];
-			e_module.voltages[4] = cellVoltages[4];
-		}
-		*/
+
 	//Collect Tempature Data
 
 		//external tempatures
@@ -272,28 +223,27 @@ int main(void)
 			HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
 		}
 
-
-	//wait for call from host
-
-
-
-
-
-
-
-
-
+		//setup BMS data
 	    bms.set_cell_mV(cellVoltages);
 	    bms.set_ntc_counts(cellTempADC);
 	    bms.update();
 
-	    auto res = bms.results();
+	    auto& r = bms.results();
 
-		(void)can.sendStd(0x07, payload, 8);
+	    // Build messages
+	    auto f0 = CanFrames::make_high_temp(r);
+	    auto f1 = CanFrames::make_voltage_extremes(r);
+	    auto f2 = CanFrames::make_average_stats(r);
 
-	// Blink if send ok
-	HAL_GPIO_TogglePin(GPIOB, OK_Pin);
-	HAL_Delay(250);
+	    // Transmit
+	    can.sendStd(0x07, f0.bytes, f0.dlc);
+	    can.sendStd(0x07, f1.bytes, f1.dlc);
+	    can.sendStd(0x07, f2.bytes, f2.dlc);
+
+	    // Blink if send ok
+	    HAL_GPIO_TogglePin(GPIOB, OK_Pin);
+	    HAL_Delay(250);
+
 	//set fault LED and write to EEPROM
 
 
