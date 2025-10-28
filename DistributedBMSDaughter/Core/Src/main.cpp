@@ -28,6 +28,7 @@
 #include "BMS.hpp"
 #include "CanFrame.cpp"
 #include "FaultManager.hpp"
+#include "DeviceConfig.hpp"
 //C++ stuff
 #include <array>
 #include <cstring>
@@ -86,7 +87,7 @@ static void MX_USB_PCD_Init(void);
 
 //creating classes for BMS stuff
 BQ7692000PW bq(&hi2c2);
-BMS bms(4); // 4-cell configuration
+BMS bms(DeviceConfig::CELL_COUNT_CONF); // Configurable cell count
 extern CAN_HandleTypeDef hcan1;
 static CanBus can(hcan1);
 
@@ -168,11 +169,13 @@ int main(void)
     }
     HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
 
+
+
     //Data
 	uint16_t packVoltage = 0;
 	uint16_t dieTemp = 0;
-	std::array<uint16_t, CELL_COUNT> cellVoltages{};
-	std::array<uint16_t, CELL_COUNT> cellTempADC{};
+	std::array<uint16_t, 5> cellVoltages{};
+	std::array<uint16_t, 5> cellTempADC{};
 
 
 	TempDMAComplete = false;
@@ -254,20 +257,38 @@ int main(void)
 	    auto f2 = CanFrames::make_average_stats(r);
 
 	    // Transmit
-      if (can.sendStd(0x07, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
+      if (can.sendStd(DeviceConfig::CAN_ID, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
         faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+        if (DeviceConfig::ENABLE_CAN_MONITORING) {
+            printf("CAN TX Error: HIGH_TEMP (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
+        }
       } else {
         faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+        if (DeviceConfig::ENABLE_CAN_MONITORING) {
+            printf("CAN TX OK: HIGH_TEMP (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
+        }
       }
-      if (can.sendStd(0x07, f1.bytes, f1.dlc) != CanBus::Result::Ok) {
+      if (can.sendStd(DeviceConfig::CAN_ID, f1.bytes, f1.dlc) != CanBus::Result::Ok) {
         faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+        if (DeviceConfig::ENABLE_CAN_MONITORING) {
+            printf("CAN TX Error: VOLTAGE_EXTREMES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
+        }
       } else {
         faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+        if (DeviceConfig::ENABLE_CAN_MONITORING) {
+            printf("CAN TX OK: VOLTAGE_EXTREMES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
+        }
       }
-      if (can.sendStd(0x07, f2.bytes, f2.dlc) != CanBus::Result::Ok) {
+      if (can.sendStd(DeviceConfig::CAN_ID, f2.bytes, f2.dlc) != CanBus::Result::Ok) {
         faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+        if (DeviceConfig::ENABLE_CAN_MONITORING) {
+            printf("CAN TX Error: AVERAGES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
+        }
       } else {
         faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+        if (DeviceConfig::ENABLE_CAN_MONITORING) {
+            printf("CAN TX OK: AVERAGES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
+        }
       }
     }
     faultManager.update(HAL_GetTick());
@@ -281,7 +302,7 @@ int main(void)
     if(faultManager.isSystemFunctional()) {
       HAL_GPIO_TogglePin(GPIOB, OK_Pin);
     }
-    HAL_Delay(250);
+    HAL_Delay(DeviceConfig::CYCLE_TIME_MS);
 
 	/* USER CODE END WHILE */
 
