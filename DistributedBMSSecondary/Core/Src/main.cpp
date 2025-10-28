@@ -125,30 +125,6 @@ int main(void)
 			fleet.handle(rx, HAL_GetTick());
 			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
 		}
-		/*
-		if (can.read(rx) && rx.id == CanFrames::BMS_CAN_ID) {
-			switch (CanFrames::getType(rx.data)) {
-			case CanFrames::HIGH_TEMP: {
-				float temp; uint8_t idx;
-				CanFrames::decodeHighTemp(rx.data, temp, idx);
-				// use temp, idx
-				break;
-			}
-			case CanFrames::VOLTAGE_EXTREMES: {
-				uint16_t hi, lo; uint8_t loIdx, hiIdx;
-				CanFrames::decodeVoltageExtremes(rx.data, hi, lo, loIdx, hiIdx);
-				break;
-			}
-			case CanFrames::AVERAGES: {
-				float avgT; uint16_t avgV; uint8_t cells;
-				CanFrames::decodeAverages(rx.data, avgT, avgV, cells);
-				break;
-			}
-			}
-			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
-		}
-		*/
-
 
 
 

@@ -27,6 +27,7 @@
 //Data handlers
 #include "BMS.hpp"
 #include "CanFrame.cpp"
+#include "FaultManager.hpp"
 //C++ stuff
 #include <array>
 #include <cstring>
@@ -88,6 +89,8 @@ BQ7692000PW bq(&hi2c2);
 BMS bms(4); // 4-cell configuration
 extern CAN_HandleTypeDef hcan1;
 static CanBus can(hcan1);
+
+FaultManager faultManager;
 
 //ADC dma stuff
 bool TempDMAComplete;
@@ -186,44 +189,59 @@ int main(void)
         }
 
 	//Voltage Data
-
+    bool voltage_read_success = true;
 		// Get pack voltage
 
+    
 		if (bq.getBAT(&packVoltage) != HAL_OK)
 		{
-			HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
-		}
+      faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+      voltage_read_success = false;
+      
+		}else{
+      faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+    }
 		// Get all cell voltages
 		if (bq.getVC(cellVoltages) != HAL_OK)
 		{
-			for (size_t i = 0; i < CELL_COUNT; i++)
-			{
-			  HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
-			}
-		}
+      faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+      voltage_read_success = false;
+		}else{
+      faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+    }
 
 	//Collect Tempature Data
-
+    bool temp_read_success = true;
 		//external tempatures
 		TempDMAComplete = false;
 		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
 		while(TempDMAComplete == false){};
 
 		for(uint8_t i = 0; i < 5; i++){
-			//adc_vals[i] = 3.3*((float)adc_buf[i] / 4096);
 			cellTempADC[i] = adc_buf[i];
+
+      if (adc_buf[i] == 0 || adc_buf[i] == 4095) {
+        faultManager.setFault(FaultManager::FaultType::ADC_READ_ERROR, true);
+        temp_read_success = false;
+      }else{
+        faultManager.clearFault(FaultManager::FaultType::ADC_READ_ERROR);
+      }
 		}
 
 
 		//board tempatures (TMP112)
 
 		// Get die temperature
-		if (bq.getDieTemp(&dieTemp) != HAL_OK)
-		{
-			HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
-		}
+    if (bq.getDieTemp(&dieTemp) != HAL_OK) {
+      faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+      temp_read_success = false;
+    } else {
+        faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+    }
+  
 
 		//setup BMS data
+    if (voltage_read_success && temp_read_success) {
 	    bms.set_cell_mV(cellVoltages);
 	    bms.set_ntc_counts(cellTempADC);
 	    bms.update();
@@ -236,16 +254,34 @@ int main(void)
 	    auto f2 = CanFrames::make_average_stats(r);
 
 	    // Transmit
-	    can.sendStd(0x07, f0.bytes, f0.dlc);
-	    can.sendStd(0x07, f1.bytes, f1.dlc);
-	    can.sendStd(0x07, f2.bytes, f2.dlc);
+      if (can.sendStd(0x07, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
+        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+      } else {
+        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+      }
+      if (can.sendStd(0x07, f1.bytes, f1.dlc) != CanBus::Result::Ok) {
+        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+      } else {
+        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+      }
+      if (can.sendStd(0x07, f2.bytes, f2.dlc) != CanBus::Result::Ok) {
+        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+      } else {
+        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+      }
+    }
+    faultManager.update(HAL_GetTick());
 
-	    // Blink if send ok
-	    HAL_GPIO_TogglePin(GPIOB, OK_Pin);
-	    HAL_Delay(250);
+    if (faultManager.hasActiveFaults()) {
+      HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
+    } else {
+      HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
+    }
 
-	//set fault LED and write to EEPROM
-
+    if(faultManager.isSystemFunctional()) {
+      HAL_GPIO_TogglePin(GPIOB, OK_Pin);
+    }
+    HAL_Delay(250);
 
 	/* USER CODE END WHILE */
 
