@@ -111,7 +111,7 @@ int main(void)
 	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
 	can.start();
 
-	fleet.register_node(0x07, 0);     // daughter 0 uses std ID 0x101
+	fleet.register_node(0x101, 0);     // daughter 0 uses std ID 0x101
 
 	/* USER CODE END 2 */
 

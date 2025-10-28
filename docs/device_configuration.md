@@ -232,3 +232,4 @@ static constexpr uint32_t CYCLE_TIME_MS = 500;
 ```
 
 This configuration system makes it easy to deploy multiple daughter boards with unique identities while maintaining a consistent codebase.
+

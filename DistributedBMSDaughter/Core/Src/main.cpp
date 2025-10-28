@@ -87,7 +87,7 @@ static void MX_USB_PCD_Init(void);
 
 //creating classes for BMS stuff
 BQ7692000PW bq(&hi2c2);
-BMS bms(DeviceConfig::CELL_COUNT_CONF); // Configurable cell count
+BMS bms(DeviceConfig::CELL_COUNT_CONF); // 4-cell configuration
 extern CAN_HandleTypeDef hcan1;
 static CanBus can(hcan1);
 
@@ -169,13 +169,20 @@ int main(void)
     }
     HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
 
-
+    // Configure fault manager restart settings
+    faultManager.setRestartEnabled(true);
+    faultManager.setRestartDelay(5000);  // 5 seconds delay between restart attempts
+    faultManager.setMaxRestartAttempts(3);  // Maximum 3 restart attempts
+    faultManager.setCommunicationTimeout(10000);  // 10 seconds communication timeout
+    
+    // Initialize communication time to prevent immediate timeout on startup
+    faultManager.updateCommunicationTime(HAL_GetTick());
 
     //Data
 	uint16_t packVoltage = 0;
 	uint16_t dieTemp = 0;
-	std::array<uint16_t, 5> cellVoltages{};
-	std::array<uint16_t, 5> cellTempADC{};
+	std::array<uint16_t, CELL_COUNT> cellVoltages{};
+	std::array<uint16_t, CELL_COUNT> cellTempADC{};
 
 
 	TempDMAComplete = false;
@@ -188,6 +195,8 @@ int main(void)
 		//process recived CAN stuff
         CanBus::Frame f;
         if (can.read(f)) {
+            // Update communication time when we receive a message
+
             // process f
         }
 
@@ -259,39 +268,31 @@ int main(void)
 	    // Transmit
       if (can.sendStd(DeviceConfig::CAN_ID, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
         faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-        if (DeviceConfig::ENABLE_CAN_MONITORING) {
-            printf("CAN TX Error: HIGH_TEMP (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
-        }
       } else {
         faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-        if (DeviceConfig::ENABLE_CAN_MONITORING) {
-            printf("CAN TX OK: HIGH_TEMP (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
-        }
+        faultManager.updateCommunicationTime(HAL_GetTick());
       }
       if (can.sendStd(DeviceConfig::CAN_ID, f1.bytes, f1.dlc) != CanBus::Result::Ok) {
         faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-        if (DeviceConfig::ENABLE_CAN_MONITORING) {
-            printf("CAN TX Error: VOLTAGE_EXTREMES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
-        }
       } else {
         faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-        if (DeviceConfig::ENABLE_CAN_MONITORING) {
-            printf("CAN TX OK: VOLTAGE_EXTREMES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
-        }
+        faultManager.updateCommunicationTime(HAL_GetTick());
       }
       if (can.sendStd(DeviceConfig::CAN_ID, f2.bytes, f2.dlc) != CanBus::Result::Ok) {
         faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-        if (DeviceConfig::ENABLE_CAN_MONITORING) {
-            printf("CAN TX Error: AVERAGES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
-        }
       } else {
         faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-        if (DeviceConfig::ENABLE_CAN_MONITORING) {
-            printf("CAN TX OK: AVERAGES (ID: 0x%03X)\n", DeviceConfig::CAN_ID);
-        }
+        faultManager.updateCommunicationTime(HAL_GetTick());
       }
     }
     faultManager.update(HAL_GetTick());
+
+    // Check if restart is needed
+    if (faultManager.shouldRestart()) {
+        faultManager.attemptRestart();
+        // Perform system restart - this will reset the microcontroller
+        HAL_NVIC_SystemReset();
+    }
 
     if (faultManager.hasActiveFaults()) {
       HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
