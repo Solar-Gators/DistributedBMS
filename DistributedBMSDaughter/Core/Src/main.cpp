@@ -160,7 +160,7 @@ int main(void)
     {
 	    Error_Handler();
     }
-
+    HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
     //initalize BMS stuff
     while (bq.init() != HAL_OK)
     {
@@ -514,19 +514,7 @@ static void MX_CAN1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN1_Init 2 */
-  CAN_FilterTypeDef canfilterconfig;
 
-  	canfilterconfig.FilterActivation = CAN_FILTER_ENABLE;
-  	canfilterconfig.FilterBank = 0;  // which filter bank to use from the assigned ones
-  	canfilterconfig.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-  	canfilterconfig.FilterIdHigh = 0x000<<5;
-  	canfilterconfig.FilterIdLow = 0;
-  	canfilterconfig.FilterMaskIdHigh = 0x000<<5;
-  	canfilterconfig.FilterMaskIdLow = 0x0000;
-  	canfilterconfig.FilterMode = CAN_FILTERMODE_IDMASK;
-  	canfilterconfig.FilterScale = CAN_FILTERSCALE_32BIT;
-
-  	HAL_CAN_ConfigFilter(&hcan1, &canfilterconfig);
   /* USER CODE END CAN1_Init 2 */
 
 }
@@ -687,6 +675,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_2|NWC_Pin|OK_Pin
                           |ERROR_Pin|Fault_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : PB0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -701,6 +692,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : TS1_Pin */
+  GPIO_InitStruct.Pin = TS1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(TS1_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */

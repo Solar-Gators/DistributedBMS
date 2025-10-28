@@ -66,6 +66,8 @@ void Error_Handler(void);
 #define ERROR_GPIO_Port GPIOB
 #define Fault_Pin GPIO_PIN_15
 #define Fault_GPIO_Port GPIOB
+#define TS1_Pin GPIO_PIN_10
+#define TS1_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 
