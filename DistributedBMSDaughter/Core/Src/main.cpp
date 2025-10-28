@@ -1,4 +1,4 @@
-//* USER CODE BEGIN Header */
+/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
   * @file           : main.c
@@ -18,12 +18,13 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-//Drivers
 #include "BQ7692000.hpp"
 #include "CanBus.hpp"
+#include "CanDriver.hpp"
 //Data handlers
 #include "BMS.hpp"
 #include "CanFrame.cpp"
@@ -34,7 +35,6 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdint>
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -64,6 +64,13 @@ SPI_HandleTypeDef hspi1;
 
 PCD_HandleTypeDef hpcd_USB_FS;
 
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -78,18 +85,23 @@ static void MX_CAN1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USB_PCD_Init(void);
-/* USER CODE BEGIN PFP */
+void StartDefaultTask(void *argument);
 
+/* USER CODE BEGIN PFP */
+static int count = 0;
+HAL_StatusTypeDef allCallback(const CANDriver::CANFrame& msg, void* ctx){
+	count++;
+	return HAL_OK;
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-//creating classes for BMS stuff
 BQ7692000PW bq(&hi2c2);
 BMS bms(DeviceConfig::CELL_COUNT_CONF); // 4-cell configuration
 extern CAN_HandleTypeDef hcan1;
-static CanBus can(hcan1);
+static CANDriver::CANDevice can(&hcan1);
+//static CanBus can(hcan1);
 
 FaultManager faultManager;
 
@@ -102,15 +114,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	TempDMAComplete = true;
 }
 
-
-// Can reception
-extern "C" void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* /*hcan*/)
-{
-    if (auto* cb = CanBus::isr_instance()) {
-        cb->onRxFifo0Pending();
-    }
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -120,195 +123,69 @@ extern "C" void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* /*hcan*/)
 int main(void)
 {
 
-	/* USER CODE BEGIN 1 */
+  /* USER CODE BEGIN 1 */
 
-	/* USER CODE END 1 */
+  /* USER CODE END 1 */
 
-	/* MCU Configuration--------------------------------------------------------*/
+  /* MCU Configuration--------------------------------------------------------*/
 
-	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-	HAL_Init();
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-	/* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-	/* USER CODE END Init */
+  /* USER CODE END Init */
 
-	/* Configure the system clock */
-	SystemClock_Config();
+  /* Configure the system clock */
+  SystemClock_Config();
 
-	/* Configure the peripherals common clocks */
-	PeriphCommonClock_Config();
+  /* Configure the peripherals common clocks */
+  PeriphCommonClock_Config();
 
-	/* USER CODE BEGIN SysInit */
+  /* USER CODE BEGIN SysInit */
 
-	/* USER CODE END SysInit */
+  /* USER CODE END SysInit */
 
-	/* Initialize all configured peripherals */
-	MX_GPIO_Init();
-	MX_DMA_Init();
-	MX_ADC1_Init();
-	MX_CAN1_Init();
-	MX_I2C2_Init();
-	MX_SPI1_Init();
-	MX_USB_PCD_Init();
-	/* USER CODE BEGIN 2 */
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_ADC1_Init();
+  MX_CAN1_Init();
+  MX_I2C2_Init();
+  MX_SPI1_Init();
+  MX_USB_PCD_Init();
+  /* USER CODE BEGIN 2 */
 
-	//CAN Config
-	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
-	can.start();
-    if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
-    {
-	    Error_Handler();
-    }
-    HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
-    //initalize BMS stuff
-    while (bq.init() != HAL_OK)
-    {
-        // Error handling
-    	HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
-    }
-    HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
+  /* USER CODE END 2 */
 
-    // Configure fault manager restart settings
-    faultManager.setRestartEnabled(true);
-    faultManager.setRestartDelay(5000);  // 5 seconds delay between restart attempts
-    faultManager.setMaxRestartAttempts(3);  // Maximum 3 restart attempts
-    faultManager.setCommunicationTimeout(10000);  // 10 seconds communication timeout
-    
-    // Initialize communication time to prevent immediate timeout on startup
-    faultManager.updateCommunicationTime(HAL_GetTick());
+  /* Init scheduler */
+  osKernelInitialize();
 
-    //Data
-	uint16_t packVoltage = 0;
-	uint16_t dieTemp = 0;
-	std::array<uint16_t, CELL_COUNT> cellVoltages{};
-	std::array<uint16_t, CELL_COUNT> cellTempADC{};
+  can.addCallbackAll(allCallback);
+  can.StartCANDevice();
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
 
-	TempDMAComplete = false;
-	/* USER CODE END 2 */
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
 
-	/* Infinite loop */
-	/* USER CODE BEGIN WHILE */
-	while (1)
-	{
-		//process recived CAN stuff
-        CanBus::Frame f;
-        if (can.read(f)) {
-            // Update communication time when we receive a message
+  /* Start scheduler */
+  osKernelStart();
 
-            // process f
-        }
+  /* We should never get here as control is now taken by the scheduler */
 
-	//Voltage Data
-    bool voltage_read_success = true;
-		// Get pack voltage
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
 
-    
-		if (bq.getBAT(&packVoltage) != HAL_OK)
-		{
-      faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-      voltage_read_success = false;
-      
-		}else{
-      faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-    }
-		// Get all cell voltages
-		if (bq.getVC(cellVoltages) != HAL_OK)
-		{
-      faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-      voltage_read_success = false;
-		}else{
-      faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-    }
-
-	//Collect Tempature Data
-    bool temp_read_success = true;
-		//external tempatures
-		TempDMAComplete = false;
-		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
-		while(TempDMAComplete == false){};
-
-		for(uint8_t i = 0; i < 5; i++){
-			cellTempADC[i] = adc_buf[i];
-
-      if (adc_buf[i] == 0 || adc_buf[i] == 4095) {
-        faultManager.setFault(FaultManager::FaultType::ADC_READ_ERROR, true);
-        temp_read_success = false;
-      }else{
-        faultManager.clearFault(FaultManager::FaultType::ADC_READ_ERROR);
-      }
-		}
-
-
-		//board tempatures (TMP112)
-
-		// Get die temperature
-    if (bq.getDieTemp(&dieTemp) != HAL_OK) {
-      faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-      temp_read_success = false;
-    } else {
-        faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-    }
-  
-
-		//setup BMS data
-    if (voltage_read_success && temp_read_success) {
-	    bms.set_cell_mV(cellVoltages);
-	    bms.set_ntc_counts(cellTempADC);
-	    bms.update();
-
-	    auto& r = bms.results();
-
-	    // Build messages
-	    auto f0 = CanFrames::make_high_temp(r);
-	    auto f1 = CanFrames::make_voltage_extremes(r);
-	    auto f2 = CanFrames::make_average_stats(r);
-
-	    // Transmit
-      if (can.sendStd(DeviceConfig::CAN_ID, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
-        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-      } else {
-        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-        faultManager.updateCommunicationTime(HAL_GetTick());
-      }
-      if (can.sendStd(DeviceConfig::CAN_ID, f1.bytes, f1.dlc) != CanBus::Result::Ok) {
-        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-      } else {
-        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-        faultManager.updateCommunicationTime(HAL_GetTick());
-      }
-      if (can.sendStd(DeviceConfig::CAN_ID, f2.bytes, f2.dlc) != CanBus::Result::Ok) {
-        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-      } else {
-        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-        faultManager.updateCommunicationTime(HAL_GetTick());
-      }
-    }
-    faultManager.update(HAL_GetTick());
-
-    // Check if restart is needed
-    if (faultManager.shouldRestart()) {
-        faultManager.attemptRestart();
-        // Perform system restart - this will reset the microcontroller
-        HAL_NVIC_SystemReset();
-    }
-
-    if (faultManager.hasActiveFaults()) {
-      HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
-    } else {
-      HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
-    }
-
-    if(faultManager.isSystemFunctional()) {
-      HAL_GPIO_TogglePin(GPIOB, OK_Pin);
-    }
-    HAL_Delay(DeviceConfig::CYCLE_TIME_MS);
-
-	/* USER CODE END WHILE */
-
-	/* USER CODE BEGIN 3 */
-	}
+    /* USER CODE BEGIN 3 */
+  }
   /* USER CODE END 3 */
 }
 
@@ -651,7 +528,7 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
 }
@@ -707,6 +584,183 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+	CANDriver::CANFrame msg(0x444, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+	uint8_t test_data[8] = {0};
+
+
+	HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
+	//initalize BMS stuff
+	while (bq.init() != HAL_OK)
+	{
+		// Error handling
+		HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
+	}
+	HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
+
+	// Configure fault manager restart settings
+	faultManager.setRestartEnabled(true);
+	faultManager.setRestartDelay(5000);  // 5 seconds delay between restart attempts
+	faultManager.setMaxRestartAttempts(3);  // Maximum 3 restart attempts
+	faultManager.setCommunicationTimeout(10000);  // 10 seconds communication timeout
+
+	// Initialize communication time to prevent immediate timeout on startup
+	faultManager.updateCommunicationTime(HAL_GetTick());
+
+	//Data
+	uint16_t packVoltage = 0;
+	uint16_t dieTemp = 0;
+	std::array<uint16_t, CELL_COUNT> cellVoltages{};
+	std::array<uint16_t, CELL_COUNT> cellTempADC{};
+
+
+	TempDMAComplete = false;
+  /* Infinite loop */
+  for(;;)
+  {
+	  bool voltage_read_success = true;
+		// Get pack voltage
+
+
+		if (bq.getBAT(&packVoltage) != HAL_OK)
+		{
+		faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+		voltage_read_success = false;
+
+		}else{
+		faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+	  }
+		// Get all cell voltages
+		if (bq.getVC(cellVoltages) != HAL_OK)
+		{
+		faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+		voltage_read_success = false;
+		}else{
+		faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+	  }
+
+	//Collect Tempature Data
+	  bool temp_read_success = true;
+		//external tempatures
+		TempDMAComplete = false;
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
+		while(TempDMAComplete == false){};
+
+		for(uint8_t i = 0; i < 5; i++){
+			cellTempADC[i] = adc_buf[i];
+
+			if (adc_buf[i] == 0 || adc_buf[i] == 4095) {
+			  faultManager.setFault(FaultManager::FaultType::ADC_READ_ERROR, true);
+			  temp_read_success = false;
+			}else{
+			  faultManager.clearFault(FaultManager::FaultType::ADC_READ_ERROR);
+			}
+		}
+
+
+		//board tempatures (TMP112)
+
+		// Get die temperature
+	  if (bq.getDieTemp(&dieTemp) != HAL_OK) {
+		faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+		temp_read_success = false;
+	  } else {
+		  faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+	  }
+
+
+		//setup BMS data
+	  if (voltage_read_success && temp_read_success) {
+		bms.set_cell_mV(cellVoltages);
+		bms.set_ntc_counts(cellTempADC);
+		bms.update();
+
+		auto& r = bms.results();
+
+		// Build messages
+		auto f0 = CanFrames::make_high_temp(r);
+		auto f1 = CanFrames::make_voltage_extremes(r);
+		auto f2 = CanFrames::make_average_stats(r);
+
+		test_data[0] = count;
+		test_data[1] = 67;
+		msg.LoadData(&test_data[0], 8);
+		can.Send(&msg);
+
+		// Transmit
+	//      if (can.sendStd(DeviceConfig::CAN_ID, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
+	//        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+	//      } else {
+	//        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+	//        faultManager.updateCommunicationTime(HAL_GetTick());
+	//      }
+	//      if (can.sendStd(DeviceConfig::CAN_ID, f1.bytes, f1.dlc) != CanBus::Result::Ok) {
+	//        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+	//      } else {
+	//        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+	//        faultManager.updateCommunicationTime(HAL_GetTick());
+	//      }
+	//      if (can.sendStd(DeviceConfig::CAN_ID, f2.bytes, f2.dlc) != CanBus::Result::Ok) {
+	//        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+	//      } else {
+	//        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+	//        faultManager.updateCommunicationTime(HAL_GetTick());
+	//      }
+	  }
+	  faultManager.update(HAL_GetTick());
+
+	  // Check if restart is needed
+	  if (faultManager.shouldRestart()) {
+		  faultManager.attemptRestart();
+		  // Perform system restart - this will reset the microcontroller
+		  HAL_NVIC_SystemReset();
+	  }
+
+	  if (faultManager.hasActiveFaults()) {
+		HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
+	  } else {
+		HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
+	  }
+
+	  if(faultManager.isSystemFunctional()) {
+		HAL_GPIO_TogglePin(GPIOB, OK_Pin);
+	  }
+	  HAL_Delay(DeviceConfig::CYCLE_TIME_MS);
+	  osDelay(1);
+  }
+  /* USER CODE END 5 */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM6 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM6) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
