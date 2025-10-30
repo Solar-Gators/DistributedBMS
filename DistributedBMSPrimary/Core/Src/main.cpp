@@ -78,6 +78,7 @@ static void MX_ICACHE_Init(void);
   * @brief  The application entry point.
   * @retval int
   */
+
 int main(void)
 {
 
@@ -122,8 +123,10 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
   }
+
   /* USER CODE END 3 */
-}
+} // end extern "C"
+
 
 /**
   * @brief System Clock Configuration
