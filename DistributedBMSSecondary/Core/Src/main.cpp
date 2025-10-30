@@ -124,6 +124,7 @@ int main(void)
 		if (can.read(rx)) {
 			fleet.handle(rx, HAL_GetTick());
 			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+			can.sendStd(0x21, {0x67,67}, 2);
 		}
 
 
