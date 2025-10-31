@@ -631,6 +631,7 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
 	CANDriver::CANFrame avg_msg(0x446, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+	int failure = 0;
 
 
 	HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
@@ -700,6 +701,20 @@ void StartDefaultTask(void *argument)
 	//        faultManager.updateCommunicationTime(HAL_GetTick());
 	//      }
 //	  }
+	  uint32_t err = HAL_CAN_GetError(&hcan1);
+	  uint32_t esr = hcan1.Instance->ESR;
+	  if (0 != err) {
+		  failure++;
+	  }
+
+	  uint32_t tec = (esr >> 16) & 0xFF;
+	  uint32_t rec = (esr >> 24) & 0xFF;
+	  uint32_t lec =  esr & 0x7;
+
+	  if (0 == esr)
+	  {
+		  faultManager.updateCommunicationTime(HAL_GetTick());
+	  }
 	  faultManager.update(HAL_GetTick());
 
 	  // Check if restart is needed
@@ -718,8 +733,8 @@ void StartDefaultTask(void *argument)
 	  if(faultManager.isSystemFunctional()) {
 		HAL_GPIO_TogglePin(GPIOB, OK_Pin);
 	  }
-	  HAL_Delay(DeviceConfig::CYCLE_TIME_MS);
-	  osDelay(1);
+//	  HAL_Delay();
+	  osDelay(DeviceConfig::CYCLE_TIME_MS);
   }
   /* USER CODE END 5 */
 }

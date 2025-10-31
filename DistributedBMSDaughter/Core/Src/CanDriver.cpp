@@ -171,7 +171,12 @@ HAL_StatusTypeDef CANDevice::StartCANDevice()
         }
     }
 
-    TRY(HAL_CAN_ActivateNotification(hcan_, CAN_IT_RX_FIFO0_MSG_PENDING));
+    TRY(HAL_CAN_ActivateNotification(hcan_, CAN_IT_RX_FIFO0_MSG_PENDING |
+    		CAN_IT_BUSOFF |
+    	    CAN_IT_ERROR_WARNING |
+    	    CAN_IT_ERROR_PASSIVE |
+    	    CAN_IT_LAST_ERROR_CODE |
+    	    CAN_IT_ERROR));
 
     TRY(HAL_CAN_Start(hcan_));
 
