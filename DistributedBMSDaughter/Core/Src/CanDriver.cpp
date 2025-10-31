@@ -591,6 +591,8 @@ void CANDevice::HandleTxTrampoline(void* arg)
 void CANDevice::HandleTx()
 {
     CANFrame* tx_msg;
+    HAL_StatusTypeDef status = HAL_OK;
+    int failures = 0;
     for (;;)
     {
         osMessageQueueGet(tx_queue_, &tx_msg, NULL, osWaitForever);
@@ -615,7 +617,7 @@ void CANDevice::HandleTx()
                                           .MessageMarker = 0};
 
         // Request HAL message send
-        HAL_FDCAN_AddMessageToTxFifoQ(hcan_, &txHeader, tx_msg->data);
+        status = HAL_FDCAN_AddMessageToTxFifoQ(hcan_, &txHeader, tx_msg->data);
 #else
         while (!HAL_CAN_GetTxMailboxesFreeLevel(hcan_))
             ;
@@ -632,7 +634,11 @@ void CANDevice::HandleTx()
         uint32_t txMailbox;
 
         // Request HAL message send
-        HAL_CAN_AddTxMessage(hcan_, &txHeader, tx_msg->data, &txMailbox);
+        status = HAL_CAN_AddTxMessage(hcan_, &txHeader, tx_msg->data, &txMailbox);
+        if (HAL_OK != status) {
+        	failures++;
+        	// uh oh
+        }
 #endif
     }
 }

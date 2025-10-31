@@ -69,7 +69,30 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+
+osThreadId_t voltageMonitoringHandle;
+const osThreadAttr_t voltageMonitoring_attributes = {
+  .name = "voltageTask",
+  .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
+};
+
+osThreadId_t temperatureMonitoringHandle;
+const osThreadAttr_t temperatureMonitoring_attributes = {
+  .name = "temperatureTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+
+osMutexId_t bmsMutex_id;
+
+const osMutexAttr_t BMS_Mutex_attr = {
+  "BMSMutex",     // human readable mutex name
+  osMutexRecursive,    // attr_bits
+  NULL,                // memory for control block
+  0U                   // size for control block
 };
 /* USER CODE BEGIN PV */
 
@@ -86,6 +109,8 @@ static void MX_I2C2_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USB_PCD_Init(void);
 void StartDefaultTask(void *argument);
+void StartVoltageTask(void *argument);
+void StartTemperatureTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 static int count = 0;
@@ -113,6 +138,12 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	//move data between buffer arrays
 	TempDMAComplete = true;
 }
+
+static uint16_t packVoltage = 0;
+static std::array<uint16_t, CELL_COUNT> cellVoltages{};
+
+static uint16_t dieTemp = 0;
+static std::array<uint16_t, CELL_COUNT> cellTempADC{};
 
 /* USER CODE END 0 */
 
@@ -161,9 +192,13 @@ int main(void)
   /* Init scheduler */
   osKernelInitialize();
 
+  bmsMutex_id = osMutexNew(&BMS_Mutex_attr);
+
   can.addCallbackAll(allCallback);
   can.StartCANDevice();
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  voltageMonitoringHandle = osThreadNew(StartVoltageTask, NULL, &voltageMonitoring_attributes);
+  temperatureMonitoringHandle = osThreadNew(StartTemperatureTask, NULL, &temperatureMonitoring_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -595,8 +630,7 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-	CANDriver::CANFrame msg(0x444, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
-	uint8_t test_data[8] = {0};
+	CANDriver::CANFrame avg_msg(0x446, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 
 
 	HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
@@ -618,84 +652,33 @@ void StartDefaultTask(void *argument)
 	faultManager.updateCommunicationTime(HAL_GetTick());
 
 	//Data
-	uint16_t packVoltage = 0;
-	uint16_t dieTemp = 0;
-	std::array<uint16_t, CELL_COUNT> cellVoltages{};
-	std::array<uint16_t, CELL_COUNT> cellTempADC{};
+//	uint16_t packVoltage = 0;
+//	uint16_t dieTemp = 0;
+//	std::array<uint16_t, CELL_COUNT> cellVoltages{};
+//	std::array<uint16_t, CELL_COUNT> cellTempADC{};
 
 
 	TempDMAComplete = false;
   /* Infinite loop */
   for(;;)
   {
-	  bool voltage_read_success = true;
-		// Get pack voltage
-
-
-		if (bq.getBAT(&packVoltage) != HAL_OK)
-		{
-		faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-		voltage_read_success = false;
-
-		}else{
-		faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-	  }
-		// Get all cell voltages
-		if (bq.getVC(cellVoltages) != HAL_OK)
-		{
-		faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-		voltage_read_success = false;
-		}else{
-		faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-	  }
-
-	//Collect Tempature Data
-	  bool temp_read_success = true;
-		//external tempatures
-		TempDMAComplete = false;
-		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
-		while(TempDMAComplete == false){};
-
-		for(uint8_t i = 0; i < 5; i++){
-			cellTempADC[i] = adc_buf[i];
-
-			if (adc_buf[i] == 0 || adc_buf[i] == 4095) {
-			  faultManager.setFault(FaultManager::FaultType::ADC_READ_ERROR, true);
-			  temp_read_success = false;
-			}else{
-			  faultManager.clearFault(FaultManager::FaultType::ADC_READ_ERROR);
-			}
-		}
-
-
-		//board tempatures (TMP112)
-
-		// Get die temperature
-	  if (bq.getDieTemp(&dieTemp) != HAL_OK) {
-		faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-		temp_read_success = false;
-	  } else {
-		  faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-	  }
 
 
 		//setup BMS data
-	  if (voltage_read_success && temp_read_success) {
-		bms.set_cell_mV(cellVoltages);
-		bms.set_ntc_counts(cellTempADC);
-		bms.update();
+//	  if (voltage_read_success && temp_read_success) {
+//		bms.set_cell_mV(cellVoltages);
+//		bms.set_ntc_counts(cellTempADC);
+//		bms.update();
 
+	  	osMutexAcquire(bmsMutex_id, osWaitForever);
 		auto& r = bms.results();
+		osMutexRelease(bmsMutex_id);
 
-		// Build messages
-		auto f0 = CanFrames::make_high_temp(r);
-		auto f1 = CanFrames::make_voltage_extremes(r);
-		auto f2 = CanFrames::make_average_stats(r);
+		// Build message
+		auto avg_data = CanFrames::make_average_stats(r);
 
-		test_data[0] = count;
-		test_data[1] = 67;
-		msg.LoadData(&test_data[0], 8);
-		can.Send(&msg);
+		avg_msg.LoadData(avg_data.bytes.data(), 8);
+		can.Send(&avg_msg);
 
 		// Transmit
 	//      if (can.sendStd(DeviceConfig::CAN_ID, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
@@ -716,7 +699,7 @@ void StartDefaultTask(void *argument)
 	//        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
 	//        faultManager.updateCommunicationTime(HAL_GetTick());
 	//      }
-	  }
+//	  }
 	  faultManager.update(HAL_GetTick());
 
 	  // Check if restart is needed
@@ -739,6 +722,118 @@ void StartDefaultTask(void *argument)
 	  osDelay(1);
   }
   /* USER CODE END 5 */
+}
+
+void StartVoltageTask(void *argument)
+{
+
+	bool voltage_read_success = true;
+	CANDriver::CANFrame highvolt_msg(0x445, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+
+	for (;;)
+	{
+		osMutexAcquire(bmsMutex_id, osWaitForever);
+		if (bq.getBAT(&packVoltage) != HAL_OK)
+		{
+			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+			voltage_read_success = false;
+		}
+		else
+		{
+			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+		}
+
+		if (bq.getVC(cellVoltages) != HAL_OK)
+		{
+			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+			voltage_read_success = false;
+		}
+		else
+		{
+			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+		}
+
+		if (voltage_read_success)
+		{
+			bms.set_cell_mV(cellVoltages);
+			bms.update();
+		}
+		osMutexRelease(bmsMutex_id);
+
+		osDelay(10);
+
+		osMutexAcquire(bmsMutex_id, osWaitForever);
+		auto& r = bms.results();
+		osMutexRelease(bmsMutex_id);
+
+		auto data = CanFrames::make_voltage_extremes(r);
+		highvolt_msg.LoadData(data.bytes.data(), 8);
+		can.Send(&highvolt_msg);
+
+		osDelay(250);
+	}
+}
+
+void StartTemperatureTask(void *argument)
+{
+
+	bool temp_read_success = true;
+	CANDriver::CANFrame hightemp_msg(0x444, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+
+	for (;;)
+	{
+
+		//external temperatures
+		TempDMAComplete = false;
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
+		while(TempDMAComplete == false){};
+
+		for(uint8_t i = 0; i < 5; i++){
+			cellTempADC[i] = adc_buf[i];
+
+			if (adc_buf[i] == 0 || adc_buf[i] == 4095) {
+				faultManager.setFault(FaultManager::FaultType::ADC_READ_ERROR, true);
+				temp_read_success = false;
+			}
+			else
+			{
+				faultManager.clearFault(FaultManager::FaultType::ADC_READ_ERROR);
+			}
+		}
+
+
+		//board temperatures (TMP112)
+
+		// Get die temperature
+		osMutexAcquire(bmsMutex_id, osWaitForever);
+		if (bq.getDieTemp(&dieTemp) != HAL_OK) {
+			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+			temp_read_success = false;
+		}
+		else
+		{
+			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+		}
+
+		if (temp_read_success)
+		{
+			bms.set_ntc_counts(cellTempADC);
+			bms.update();
+		}
+		osMutexRelease(bmsMutex_id);
+
+		osDelay(10);
+
+		osMutexAcquire(bmsMutex_id, osWaitForever);
+		auto& r = bms.results();
+		osMutexRelease(bmsMutex_id);
+
+		auto data = CanFrames::make_voltage_extremes(r);
+		hightemp_msg.LoadData(data.bytes.data(), 8);
+		can.Send(&hightemp_msg);
+
+		osDelay(1000);
+	}
 }
 
 /**
