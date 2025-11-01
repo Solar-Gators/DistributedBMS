@@ -22,8 +22,8 @@ The Distributed BMS system follows a hierarchical architecture designed for scal
 - `BQ7692000PW`: Driver for BQ76920 battery monitor IC
 - `FaultManager`: System health and fault tracking
 - `DataValidator`: Data integrity and validation
-- `CanBus`: CAN communication interface
-- `CanFrames`: Message encoding/decoding
+- `CanDriver`: CAN communication interface
+
 
 ### 2. Secondary Board (DistributedBMSSecondary)
 
@@ -69,14 +69,7 @@ The Distributed BMS system follows a hierarchical architecture designed for scal
 │  └─────────────────────────┬─────────────────────────┘     │
 │                            │                               │
 │  ┌─────────────────────────▼─────────────────────────┐     │
-│  │              FaultManager                         │     │
-│  │  • System health monitoring                       │     │
-│  │  • Fault logging                                  │     │
-│  │  • Recovery management                            │     │
-│  └─────────────────────────┬─────────────────────────┘     │
-│                            │                               │
-│  ┌─────────────────────────▼─────────────────────────┐     │
-│  │              CAN Communication                     │     │
+│  │                    CAN Driver                     │     │
 │  │  • Message encoding                               │     │
 │  │  • Error handling                                 │     │
 │  │  • Transmission                                   │     │

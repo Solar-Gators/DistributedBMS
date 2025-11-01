@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "bts71040.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -113,6 +113,15 @@ int main(void)
   MX_ICACHE_Init();
   /* USER CODE BEGIN 2 */
 
+  // Map to your real pins (adjust if needed):
+  Bts71040::Pins pins = {
+      /* nCS */ GPIOA, NCS_L_Pin,         // you have NCS_A on GPIOA in MX_GPIO_Init
+      /* INx ports */ { GPIOB, GPIOB, GPIOB, GPIOC },
+      /* INx pins  */ { IN0_Pin, IN1_Pin, IN2_Pin, IN3_Pin }
+  };
+
+  Bts71040 bts(&hspi1, pins);
+  bts.setCsDelays(10, 10); // small margins for tCSN lead/lag
   /* USER CODE END 2 */
 
   /* Infinite loop */

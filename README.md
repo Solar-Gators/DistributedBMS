@@ -1,6 +1,6 @@
 # Distributed BMS Project
 
-A distributed Battery Management System (BMS) implementation using STM32 microcontrollers with CAN bus communication.
+A distributed Battery Management System (BMS) design based arround a series of daughter boards which collect tempature and voltage data and communicate these back to a central BMS board. The central BMS board monitors current and controlls battery fans and contactors tacots as well as a few other tasks. All boards use STM32 Microcontollers and communciate over CAN Bus
 
 ## Project Overview
 
@@ -11,29 +11,7 @@ This project implements a distributed BMS architecture consisting of:
 
 ## Architecture
 
-```
-┌─────────────────┐    CAN Bus    ┌─────────────────┐
-│   Daughter 1    │◄─────────────►│                 │
-│   (Cells 1-4)   │               │                 │
-└─────────────────┘               │   Secondary     │
-                                  │   Board         │
-┌─────────────────┐               │                 │
-│   Daughter 2    │◄─────────────►│                 │
-│   (Cells 5-8)   │               │                 │
-└─────────────────┘               │                 │
-                                  │                 │
-┌─────────────────┐               │                 │
-│   Daughter N    │◄─────────────►│                 │
-│   (Cells X-Y)   │               │                 │
-└─────────────────┘               └─────────────────┘
-                                           │
-                                           │ UART
-                                           ▼
-                                  ┌─────────────────┐
-                                  │   Main BMS      │
-                                  │   Controller    │
-                                  └─────────────────┘
-```
+Each Daughter Board PCB monitors the tempature and voltage of between 3-5 battery modules, and communicates this over CAN to the secondary STM on the central PCB. The secondary STM then aggregates all this data, and passes it to the primary STM on the central board over UART. The primary STM is responsible for all the control tasks and communicating with the rest of the car.
 
 ## Key Features
 
@@ -84,10 +62,15 @@ This project implements a distributed BMS architecture consisting of:
 - Calculates statistics (min, max, average)
 - Handles NTC temperature conversion
 
-#### 4. CAN Communication (`CanBus`, `CanFrames`)
-- Robust CAN bus implementation with interrupt handling
-- Standardized frame encoding/decoding
-- Error detection and recovery
+#### 4. CAN Driver (`CanDriver`)
+
+CANDriver::CANDevice is a CMSIS-RTOS2–driven CAN/FDCAN driver that:
+
+- Configures acceptance filters (exact ID or aligned ranges) for bxCAN or FDCAN.
+- Spawns RX/TX worker threads and RX/TX message queues.
+- Uses an ISR to drain FIFO0 into an RX queue; a worker dispatches to registered callbacks (by ID, by range, or “catch-all”).
+- Provides a Send() API that enqueues frames to a TX worker which pushes them out using HAL (FD mode/BRS enabled on FDCAN).
+- It abstracts HAL differences (bxCAN vs FDCAN), converts DLC↔byte length, and exposes simple callback registration.
 
 #### 5. BQ76920 Driver (`BQ7692000PW`)
 - Low-level communication with BQ76920 IC
@@ -98,11 +81,13 @@ This project implements a distributed BMS architecture consisting of:
 
 ### CAN Message Types
 
-| Type | ID | Description | Data Format |
-|------|----|-----------|-------------|
-| HIGH_TEMP | 0x07 | Highest temperature and index | `[type][temp_float][index]` |
-| VOLTAGE_EXTREMES | 0x07 | Min/max voltages and indices | `[type][high_v][low_v][indices]` |
-| AVERAGES | 0x07 | Average temperature and voltage | `[type][avg_temp][avg_voltage][cell_count]` |
+Daugter Board to Secondary Can Messages
+
+| Type             | ID                     | Description                     | Data Format                                 |
+|------------------|------------------------|---------------------------------|---------------------------------------------|
+| HIGH_TEMP        | 0x100 + section number | Highest temperature and index   | `[type][temp_float][index]`                 |
+| VOLTAGE_EXTREMES | 0x100 + section number | Min/max voltages and indices    | `[type][high_v][low_v][indices]`            |
+| AVERAGES         | 0x100 + section number | Average temperature and voltage | `[type][avg_temp][avg_voltage][cell_count]` |
 
 ### Message Format
 - **Type**: 1 byte (0=HIGH_TEMP, 1=VOLTAGE_EXTREMES, 2=AVERAGES)
@@ -110,17 +95,6 @@ This project implements a distributed BMS architecture consisting of:
 - **DLC**: 8 bytes (fixed)
 
 ## Getting Started
-
-### Prerequisites
-- STM32CubeIDE or compatible development environment
-- STM32L4xx HAL library
-- CAN bus analyzer (for debugging)
-
-### Building
-1. Clone the repository
-2. Open project in STM32CubeIDE
-3. Configure hardware settings in `.ioc` files
-4. Build and flash to target hardware
 
 ### Configuration
 1. Set cell count in `main.cpp` (3-5 cells supported)
@@ -136,26 +110,3 @@ This project implements a distributed BMS architecture consisting of:
 - [Data Validation Guide](docs/data_validation.md)
 - [CAN Protocol Specification](docs/can_protocol.md)
 - [Build and Deployment Guide](docs/build_guide.md)
-
-## Safety Considerations
-
-⚠️ **Important Safety Notes**:
-- This is a monitoring system only - it does not control charging/discharging
-- All battery management decisions are made by the central controller
-- Daughter boards focus on data collection and system health
-- Always validate data before making safety-critical decisions
-
-## Contributing
-
-1. Follow the existing code style
-2. Add comprehensive documentation for new features
-3. Include unit tests where applicable
-4. Update this README for significant changes
-
-## License
-
-[Add your license information here]
-
-## Support
-
-For technical support or questions, please refer to the documentation or create an issue in the repository.
