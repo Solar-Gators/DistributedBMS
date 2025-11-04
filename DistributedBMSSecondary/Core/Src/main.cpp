@@ -18,11 +18,13 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "CanBus.hpp"
-#include "CanFrames.hpp"
+//#include "CanBus.hpp"
+//#include "CanFrames.hpp"
+#include "CanDriver.hpp"
 #include "BmsFleet.hpp"
 /* USER CODE END Includes */
 
@@ -46,7 +48,12 @@ CAN_HandleTypeDef hcan1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -54,25 +61,35 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_CAN1_Init(void);
 static void MX_USART2_UART_Init(void);
+void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
+HAL_StatusTypeDef allCallback(const CANDriver::CANFrame& msg, void* ctx){
+	HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+	return HAL_OK;
+}
 
+HAL_StatusTypeDef rangeCallback(const CANDriver::CANFrame& msg, void* ctx){
+	HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+	return HAL_OK;
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 extern CAN_HandleTypeDef hcan1;
-static CanBus can(hcan1);
+//static CanBus can(hcan1);
+static CANDriver::CANDevice can(&hcan1);
 
 static BmsFleet fleet;
 
 
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
-{
-    if (auto* cb = CanBus::isr_instance()) {
-        cb->onRxFifo0Pending();
-    }
-}
+//void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+//{
+//    if (auto* cb = CanBus::isr_instance()) {
+//        cb->onRxFifo0Pending();
+//    }
+//}
 /* USER CODE END 0 */
 
 /**
@@ -108,10 +125,43 @@ int main(void)
 	MX_USART2_UART_Init();
 	/* USER CODE BEGIN 2 */
 
-	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
-	can.start();
+	osKernelInitialize();
 
-	fleet.register_node(0x101, 0);     // daughter 0 uses std ID 0x101
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+	can.AddFilterRange(0x444, 4, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
+	can.addCallbackRange(0x444, 4, SG_CAN_ID_STD, rangeCallback, NULL);
+	can.addCallbackAll(allCallback);
+	can.StartCANDevice();
+  /* Create the thread(s) */
+  /* creation of defaultTask */
+    defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+    osKernelStart();
+
+
 
 	/* USER CODE END 2 */
 
@@ -120,12 +170,12 @@ int main(void)
 	while (1)
 	{
 
-		CanBus::Frame rx;
-		if (can.read(rx)) {
-			fleet.handle(rx, HAL_GetTick());
-			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
-			can.sendStd(0x21, {0x67,67}, 2);
-		}
+//		CanBus::Frame rx;
+//		if (can.read(rx)) {
+//			fleet.handle(rx, HAL_GetTick());
+//			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+//			can.sendStd(0x21, {0x67,67}, 2);
+//		}
 
 
 
@@ -281,6 +331,34 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+//	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
+//	can.start();
+
+	fleet.register_node(0x101, 0);     // daughter 0 uses std ID 0x101
+	for(;;)
+	{
+//		CanBus::Frame rx;
+//		if (can.read(rx)) {
+//			fleet.handle(rx, HAL_GetTick());
+//			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+//			can.sendStd(0x21, {0x67,67}, 2);
+//		}
+
+		osDelay(1);
+	}
+  /* USER CODE END 5 */
+}
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
