@@ -64,24 +64,29 @@ static void MX_USART2_UART_Init(void);
 void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
+
+extern CAN_HandleTypeDef hcan1;
+//static CanBus can(hcan1);
+static CANDriver::CANDevice can(&hcan1);
+
+static BmsFleet fleet;
+
 HAL_StatusTypeDef allCallback(const CANDriver::CANFrame& msg, void* ctx){
 	HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+	fleet.handle(msg, HAL_GetTick());
 	return HAL_OK;
 }
 
-HAL_StatusTypeDef rangeCallback(const CANDriver::CANFrame& msg, void* ctx){
+HAL_StatusTypeDef daughterOneCallback(const CANDriver::CANFrame& msg, void* ctx){
 	HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+	fleet.handle(msg, HAL_GetTick());
 	return HAL_OK;
 }
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-extern CAN_HandleTypeDef hcan1;
-//static CanBus can(hcan1);
-static CANDriver::CANDevice can(&hcan1);
 
-static BmsFleet fleet;
 
 
 //void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
@@ -142,9 +147,17 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
-	can.AddFilterRange(0x444, 4, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
-	can.addCallbackRange(0x444, 4, SG_CAN_ID_STD, rangeCallback, NULL);
+//	can.AddFilterRange(0x101, 4, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
+//	can.addCallbackRange(0x101, 4, SG_CAN_ID_STD, daughterOneCallback, NULL);
+//	can.AddFilterId(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
+//	can.addCallbackId(0x101, SG_CAN_ID_STD, daughterOneCallback, NULL);
+
+	// Add Daughters 2-6 here
+
 	can.addCallbackAll(allCallback);
+	fleet.register_node(0x101, 0);
+
+
 	can.StartCANDevice();
   /* Create the thread(s) */
   /* creation of defaultTask */
@@ -345,7 +358,7 @@ void StartDefaultTask(void *argument)
 //	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
 //	can.start();
 
-	fleet.register_node(0x101, 0);     // daughter 0 uses std ID 0x101
+	     // daughter 0 uses std ID 0x101
 	for(;;)
 	{
 //		CanBus::Frame rx;

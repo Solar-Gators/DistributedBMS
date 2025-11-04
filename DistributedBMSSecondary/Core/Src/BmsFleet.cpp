@@ -53,13 +53,13 @@ int BmsFleet::find_module_index(uint16_t can_id) const {
     return -1;
 }
 
-void BmsFleet::handle(const CanBus::Frame& rx, uint32_t now_ms) {
-    int mi = find_module_index(rx.id);
+void BmsFleet::handle(const CANDriver::CANFrame& msg, uint32_t now_ms) {
+    int mi = find_module_index((uint16_t)msg.can_id);
     if (mi < 0) return; // not registered
 
     ModuleData& M = modules_[mi];
-    const uint8_t* b = rx.data;
-    const uint8_t  n = rx.dlc;
+    const uint8_t* b = msg.data;
+    const uint8_t  n = msg.len;
 
     if (n < 1) return;
 

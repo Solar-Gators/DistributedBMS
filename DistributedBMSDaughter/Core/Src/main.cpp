@@ -196,6 +196,7 @@ int main(void)
 
   can.addCallbackAll(allCallback);
   can.StartCANDevice();
+
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
   voltageMonitoringHandle = osThreadNew(StartVoltageTask, NULL, &voltageMonitoring_attributes);
   temperatureMonitoringHandle = osThreadNew(StartTemperatureTask, NULL, &temperatureMonitoring_attributes);
@@ -630,9 +631,7 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-	CANDriver::CANFrame avg_msg(0x446, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
-	int failure = 0;
-
+	CANDriver::CANFrame avg_msg(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 
 	HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
 	//initalize BMS stuff
@@ -652,90 +651,58 @@ void StartDefaultTask(void *argument)
 	// Initialize communication time to prevent immediate timeout on startup
 	faultManager.updateCommunicationTime(HAL_GetTick());
 
-	//Data
-//	uint16_t packVoltage = 0;
-//	uint16_t dieTemp = 0;
-//	std::array<uint16_t, CELL_COUNT> cellVoltages{};
-//	std::array<uint16_t, CELL_COUNT> cellTempADC{};
-
-
 	TempDMAComplete = false;
-  /* Infinite loop */
-  for(;;)
-  {
+	  /* Infinite loop */
+	  for(;;)
+	  {
 
-
-		//setup BMS data
-//	  if (voltage_read_success && temp_read_success) {
-//		bms.set_cell_mV(cellVoltages);
-//		bms.set_ntc_counts(cellTempADC);
-//		bms.update();
-
-	  	osMutexAcquire(bmsMutex_id, osWaitForever);
-		auto& r = bms.results();
-		osMutexRelease(bmsMutex_id);
+		  osMutexAcquire(bmsMutex_id, osWaitForever);
+		  auto& r = bms.results();
+		  osMutexRelease(bmsMutex_id);
 
 		// Build message
-		auto avg_data = CanFrames::make_average_stats(r);
+		  auto avg_data = CanFrames::make_average_stats(r);
 
-		avg_msg.LoadData(avg_data.bytes.data(), 8);
-		can.Send(&avg_msg);
+		  avg_msg.LoadData(avg_data.bytes.data(), 8);
+		  can.Send(&avg_msg);
 
-		// Transmit
-	//      if (can.sendStd(DeviceConfig::CAN_ID, f0.bytes, f0.dlc) != CanBus::Result::Ok) {
-	//        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-	//      } else {
-	//        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-	//        faultManager.updateCommunicationTime(HAL_GetTick());
-	//      }
-	//      if (can.sendStd(DeviceConfig::CAN_ID, f1.bytes, f1.dlc) != CanBus::Result::Ok) {
-	//        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-	//      } else {
-	//        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-	//        faultManager.updateCommunicationTime(HAL_GetTick());
-	//      }
-	//      if (can.sendStd(DeviceConfig::CAN_ID, f2.bytes, f2.dlc) != CanBus::Result::Ok) {
-	//        faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
-	//      } else {
-	//        faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-	//        faultManager.updateCommunicationTime(HAL_GetTick());
-	//      }
-//	  }
-	  uint32_t err = HAL_CAN_GetError(&hcan1);
-	  uint32_t esr = hcan1.Instance->ESR;
-	  if (0 != err) {
-		  failure++;
-	  }
+		  uint32_t esr = hcan1.Instance->ESR;
+		  // uint32_t tec = (esr >> 16) & 0xFF;
+		  // uint32_t rec = (esr >> 24) & 0xFF;
+		  // uint32_t lec =  esr & 0x7;
 
-	  uint32_t tec = (esr >> 16) & 0xFF;
-	  uint32_t rec = (esr >> 24) & 0xFF;
-	  uint32_t lec =  esr & 0x7;
+		  if (0 == esr)
+		  {
+		  	  faultManager.updateCommunicationTime(HAL_GetTick());
+			  faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, false);
+			  // TODO: May have to manually reset esr TBD
+		  }
+		  else
+		  {
+			  faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR, true);
+		  }
 
-	  if (0 == esr)
-	  {
-		  faultManager.updateCommunicationTime(HAL_GetTick());
-	  }
-	  faultManager.update(HAL_GetTick());
+		  faultManager.update(HAL_GetTick());
 
 	  // Check if restart is needed
-	  if (faultManager.shouldRestart()) {
-		  faultManager.attemptRestart();
-		  // Perform system restart - this will reset the microcontroller
-		  HAL_NVIC_SystemReset();
-	  }
+		  if (faultManager.shouldRestart()) {
+			  faultManager.attemptRestart();
+			  // Perform system restart - this will reset the microcontroller
+			  HAL_NVIC_SystemReset();
+		  }
 
-	  if (faultManager.hasActiveFaults()) {
-		HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
-	  } else {
-		HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
-	  }
+		  if (faultManager.hasActiveFaults()) {
+			  HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
+		  } else {
+			  HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
+		  }
 
-	  if(faultManager.isSystemFunctional()) {
-		HAL_GPIO_TogglePin(GPIOB, OK_Pin);
+		  if(faultManager.isSystemFunctional()) {
+			  HAL_GPIO_TogglePin(GPIOB, OK_Pin);
+		  }
+
+		  osDelay(DeviceConfig::CYCLE_TIME_MS);
 	  }
-//	  HAL_Delay();
-	  osDelay(DeviceConfig::CYCLE_TIME_MS);
-  }
   /* USER CODE END 5 */
 }
 
@@ -743,7 +710,7 @@ void StartVoltageTask(void *argument)
 {
 
 	bool voltage_read_success = true;
-	CANDriver::CANFrame highvolt_msg(0x445, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+	CANDriver::CANFrame highvolt_msg(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 
 	for (;;)
 	{
@@ -785,7 +752,7 @@ void StartVoltageTask(void *argument)
 		highvolt_msg.LoadData(data.bytes.data(), 8);
 		can.Send(&highvolt_msg);
 
-		osDelay(250);
+		osDelay(DeviceConfig::CYCLE_TIME_MS);
 	}
 }
 
@@ -793,7 +760,7 @@ void StartTemperatureTask(void *argument)
 {
 
 	bool temp_read_success = true;
-	CANDriver::CANFrame hightemp_msg(0x444, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+	CANDriver::CANFrame hightemp_msg(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 
 	for (;;)
 	{
@@ -843,11 +810,11 @@ void StartTemperatureTask(void *argument)
 		auto& r = bms.results();
 		osMutexRelease(bmsMutex_id);
 
-		auto data = CanFrames::make_voltage_extremes(r);
+		auto data = CanFrames::make_high_temp(r);
 		hightemp_msg.LoadData(data.bytes.data(), 8);
 		can.Send(&hightemp_msg);
 
-		osDelay(1000);
+		osDelay(DeviceConfig::CYCLE_TIME_MS * 4);
 	}
 }
 

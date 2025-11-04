@@ -13,6 +13,7 @@
 #include <array>
 #include "CanFrames.hpp"
 #include "CanBus.hpp"
+#include "CanDriver.hpp"
 
 namespace BmsFleetCfg {
     constexpr uint8_t  MAX_MODULES = 8;
@@ -45,7 +46,7 @@ public:
     BmsFleet();
 
     bool register_node(uint16_t can_id, uint8_t idx);
-    void handle(const CanBus::Frame& rx, uint32_t now_ms);
+    void handle(const CANDriver::CANFrame& msg, uint32_t now_ms);
 
     ModuleData& module(uint8_t idx);
     const ModuleData& module(uint8_t idx) const;
