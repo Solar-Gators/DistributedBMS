@@ -72,6 +72,17 @@ static void MX_ICACHE_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+uint8_t rx_buff[10];
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance == UART4)
+  	{
+		HAL_GPIO_TogglePin(GPIOC, Error_Pin);
+		HAL_UART_Receive_IT(&huart4, rx_buff, 10);
+	}
+
+}
 /* USER CODE END 0 */
 
 /**
@@ -113,6 +124,9 @@ int main(void)
   MX_ICACHE_Init();
   /* USER CODE BEGIN 2 */
 
+
+  HAL_UART_Receive_IT(&huart4, rx_buff, 1); // enable uart interrupt
+
   // Map to your real pins (adjust if needed):
   Bts71040::Pins pins = {
       /* nCS */ GPIOA, NCS_L_Pin,         // you have NCS_A on GPIOA in MX_GPIO_Init
@@ -128,6 +142,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	HAL_GPIO_TogglePin(GPIOC, OK_Pin);
+	HAL_GPIO_TogglePin(GPIOB, IN0_Pin);
+	HAL_Delay(500);
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
