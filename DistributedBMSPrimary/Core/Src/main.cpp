@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "bts71040.hpp"
+#include "UartRxPacket.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,17 +73,39 @@ static void MX_ICACHE_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+static uint8_t rx_body_buf[256]; // payload max + 2 CRC
+static UartPktRx rx1;
+
 uint8_t rx_buff[10];
 
+static void on_uart_packet(const uint8_t* payload, uint16_t len, void* user)
+{
+    (void)user;
+    // payload[0] can be your TYPE (0x01 summary, 0x20 snapshot, etc.)
+    // switch (payload[0]) { ... }
+}
+
+void UART1_Packets_Init(void)
+{
+	uart_pkt_init(&rx1, &huart4, rx_body_buf, sizeof(rx_body_buf), on_uart_packet, NULL);
+    uart_pkt_start(&rx1);  // ← primes the first interrupt receive (header)
+}
+
+// HAL hooks (put in your user callbacks file)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if (huart->Instance == UART4)
-  	{
-		HAL_GPIO_TogglePin(GPIOC, Error_Pin);
-		HAL_UART_Receive_IT(&huart4, rx_buff, 10);
-	}
-
+    if (huart->Instance ==  UART4) {
+        uart_pkt_on_rx_cplt(&rx1);
+    }
 }
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == UART4) {
+        uart_pkt_on_error(&rx1);
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -136,6 +159,8 @@ int main(void)
 
   Bts71040 bts(&hspi1, pins);
   bts.setCsDelays(10, 10); // small margins for tCSN lead/lag
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */

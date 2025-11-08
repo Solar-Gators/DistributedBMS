@@ -25,6 +25,7 @@
 
 #include "CanDriver.hpp"
 #include "BmsFleet.hpp"
+#include "UartFleetPack.hpp"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -37,8 +38,7 @@
 #define SOF0 0xA5
 #define SOF1 0x5A
 
-// For buffer sizing: 2(SOF) + 2(LEN) + payload + 2(CRC)
-#define UART_ENCODED_SIZE(payload_len) ( (size_t)(6 + (payload_len)) )
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -96,24 +96,6 @@ HAL_StatusTypeDef daughterOneCallback(const CANDriver::CANFrame& msg, void* ctx)
 /* USER CODE BEGIN 0 */
 
 
-// Table-less CRC16-CCITT (poly 0x1021, init 0xFFFF)
-static uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
-{
-    uint16_t crc = 0xFFFF;
-    uint16_t i, b;
-
-    for (i = 0; i < len; ++i) {
-        crc ^= (uint16_t)data[i] << 8;
-        for (b = 0; b < 8; ++b) {
-            if (crc & 0x8000) {
-                crc = (uint16_t)((crc << 1) ^ 0x1021);
-            } else {
-                crc <<= 1;
-            }
-        }
-    }
-    return crc;
-}
 
 /**
  * Encode a payload into a framed UART packet.
@@ -124,39 +106,6 @@ static uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
  * @param out_max      Capacity of out_buf in bytes.
  * @return             Encoded frame length on success; 0 on error (e.g., not enough space).
  */
-size_t uart_encode_frame(const uint8_t *payload,
-                         uint16_t payload_len,
-                         uint8_t *out_buf,
-                         size_t out_max)
-{
-    size_t need = UART_ENCODED_SIZE(payload_len);
-    uint16_t crc;
-
-    if (out_buf == 0 || payload == 0) return 0;
-    if (out_max < need) return 0;
-
-    // SOF
-    out_buf[0] = SOF0;
-    out_buf[1] = SOF1;
-
-    // LEN (little-endian)
-    out_buf[2] = (uint8_t)(payload_len & 0xFF);
-    out_buf[3] = (uint8_t)((payload_len >> 8) & 0xFF);
-
-    // PAYLOAD
-    for (size_t i = 0; i < payload_len; ++i) {
-        out_buf[4 + i] = payload[i];
-    }
-
-    // CRC over LEN||PAYLOAD
-    crc = crc16_ccitt(&out_buf[2], (uint16_t)(2 + payload_len));
-
-    // CRC (little-endian)
-    out_buf[4 + payload_len] = (uint8_t)(crc & 0xFF);
-    out_buf[5 + payload_len] = (uint8_t)((crc >> 8) & 0xFF);
-
-    return need;
-}
 
 
 /* USER CODE END 0 */
@@ -422,16 +371,18 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
 
-	uint8_t payload[] = { 0x10, 0x20, 0x30, 0x40 };
-	uint8_t txbuf[UART_ENCODED_SIZE(sizeof(payload))];
-	size_t txlen = uart_encode_frame(payload, (uint16_t)sizeof(payload), txbuf, sizeof(txbuf));
+	uint8_t frame[64];
+	size_t n = uart_make_fleet_summary(fleet, HAL_GetTick(), frame, sizeof(frame));
+
+	uint8_t txbuf[UART_ENCODED_SIZE(n)];
+	size_t txlen = uart_encode_frame(frame, (uint16_t)n, txbuf, sizeof(txbuf));
+
 
 
 	for(;;)
 	{
 		if (txlen > 0) {
 			HAL_UART_Transmit(&huart2, txbuf, txlen, 1000);
-
 		}
 
 		osDelay(200);
