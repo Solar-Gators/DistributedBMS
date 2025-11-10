@@ -13,9 +13,12 @@
 
 #pragma once
 #include <cstdint>
+#include <array>
+#include "../../../DistributedBMSCommon/Inc/UartFleetTypes.hpp"
 
 namespace PrimaryBmsFleetCfg {
     constexpr uint32_t STALE_MS = 2000;  // Consider data stale after 2 seconds
+    constexpr uint8_t  MAX_MODULES = 8;
 }
 
 /**
@@ -67,6 +70,28 @@ struct FleetSummaryData {
     }
 };
 
+struct ModuleSummaryData {
+    bool     valid = false;
+    uint8_t  module_idx = 0xFF;
+    float    high_temp_C = -1000.0f;
+    uint8_t  high_temp_cell = 0;
+    uint16_t high_mV = 0;
+    uint16_t low_mV = 0;
+    uint8_t  low_idx = 0;
+    uint8_t  high_idx = 0;
+    float    avg_temp_C = 0.0f;
+    uint16_t avg_cell_mV = 0;
+    uint8_t  num_cells = 0;
+    uint16_t age_ms = 0;
+    uint32_t last_update_ms = 0;
+};
+
+struct HeartbeatData {
+    bool     valid = false;
+    uint32_t counter = 0;
+    uint32_t last_update_ms = 0;
+};
+
 /**
  * Primary BMS Fleet Manager
  * Manages fleet summary data received from Secondary MCU
@@ -83,6 +108,8 @@ public:
      * @return true if successfully parsed and updated
      */
     bool update_from_uart_payload(const uint8_t* payload, uint16_t len, uint32_t now_ms);
+    bool update_module_summary(const uint8_t* payload, uint16_t len, uint32_t now_ms);
+    bool update_heartbeat(const uint8_t* payload, uint16_t len, uint32_t now_ms);
     
     /**
      * Get current fleet summary data
@@ -91,7 +118,19 @@ public:
     FleetSummaryData& summary() { return summary_; }
     
     /**
-     * Check if we have valid data
+     * Module summary accessors
+     */
+    const ModuleSummaryData& module(uint8_t idx) const { return modules_[idx]; }
+    bool module_valid(uint8_t idx) const { return modules_[idx].valid; }
+    
+    /**
+     * Heartbeat accessors
+     */
+    const HeartbeatData& heartbeat() const { return heartbeat_; }
+    bool heartbeat_valid() const { return heartbeat_.valid; }
+    
+    /**
+     * Check if we have valid fleet summary data
      */
     bool has_data(uint32_t now_ms) const {
         return summary_.is_online(now_ms);
@@ -99,13 +138,8 @@ public:
     
 private:
     FleetSummaryData summary_;
-    
-    /**
-     * Convert temperature from °C*10 (int16_t) to float °C
-     */
-    static float from_cdeg10(int16_t c_x10) {
-        return (float)c_x10 / 10.0f;
-    }
+    std::array<ModuleSummaryData, PrimaryBmsFleetCfg::MAX_MODULES> modules_{};
+    HeartbeatData heartbeat_{};
 };
 
 #endif /* INC_PRIMARYBMSFLEET_HPP_ */

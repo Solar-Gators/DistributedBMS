@@ -346,14 +346,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(OK_GPIO_Port, OK_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, ERROR_Pin|OK_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : OK_Pin */
-  GPIO_InitStruct.Pin = OK_Pin;
+  /*Configure GPIO pins : ERROR_Pin OK_Pin */
+  GPIO_InitStruct.Pin = ERROR_Pin|OK_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(OK_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -366,38 +366,101 @@ static void MX_GPIO_Init(void)
   * @retval None
   */
 /* USER CODE END Header_StartDefaultTask */
+static volatile uint32_t g_lastHeartbeatInterval = 0;
+
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
 
 	uint8_t txbuf[64];  // Buffer for encoded frame (SOF + LEN + payload + CRC)
+	static uint8_t module_cursor = 0;
+	static uint32_t last_heartbeat_ms = 0;
+	static uint32_t heartbeat_counter = 0;
+	static uint8_t frame_rotation = 0;  // 0=fleet, 1=module, 2=heartbeat
+	uint32_t now = 0;
 
 	for(;;)
 	{
-		// Check if we have any online modules before sending
-		uint8_t online_count = 0;
+		now = osKernelGetTickCount();
+
+		if (last_heartbeat_ms == 0U) {
+			last_heartbeat_ms = now;
+		}
+
+		bool have_data = false;
 		for (uint8_t i = 0; i < BmsFleetCfg::MAX_MODULES; ++i) {
-			if (fleet.module(i).online(HAL_GetTick())) {
-				online_count++;
+			if (fleet.has_any_data(i)) {
+				have_data = true;
+				break;
 			}
 		}
-		
-		// Only send if we have online modules
-		if (online_count > 0) {
-			// Generate fresh fleet summary and encode it directly into txbuf
-			size_t txlen = uart_make_fleet_summary(fleet, HAL_GetTick(), txbuf, sizeof(txbuf));
 
-			if (txlen > 0) {
-				HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, txlen, 1000);
-				if (status != HAL_OK) {
-					// Transmission error - could set fault flag here
-					// For now, just continue and retry on next cycle
+		// Rotate between frame types to avoid overwhelming the receiver
+		switch (frame_rotation) {
+		case 0:  // Fleet summary
+			if (have_data) {
+				size_t txlen = uart_make_fleet_summary(fleet, now, txbuf, sizeof(txbuf));
+				if (txlen > 0) {
+					HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, txlen, 1000);
+					if (status != HAL_OK) {
+						// TODO: handle transmission error (set fault flag?)
+					} else {
+						// Give receiver time to process frame
+						osDelay(50);
+					}
 				}
 			}
+			frame_rotation = 1;
+			break;
+
+		case 1:  // Module summary
+			if (have_data) {
+				for (uint8_t attempts = 0; attempts < BmsFleetCfg::MAX_MODULES; ++attempts) {
+					uint8_t idx = module_cursor;
+					module_cursor = (uint8_t)((module_cursor + 1) % BmsFleetCfg::MAX_MODULES);
+					if (!fleet.has_any_data(idx)) {
+						continue;
+					}
+
+					size_t mod_len = uart_make_module_summary(fleet, idx, now, txbuf, sizeof(txbuf));
+					if (mod_len > 0) {
+						HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, mod_len, 1000);
+						if (status != HAL_OK) {
+							// TODO: handle transmission error
+						} else {
+							// Give receiver time to process frame
+							osDelay(50);
+						}
+						break;
+					}
+				}
+			}
+			frame_rotation = 2;
+			break;
+
+		case 2:  // Heartbeat
+			if ((now - last_heartbeat_ms) >= 1000U) {
+				uint32_t interval = now - last_heartbeat_ms;
+				g_lastHeartbeatInterval = interval;
+				HAL_GPIO_TogglePin(GPIOB, ERROR_Pin);
+				size_t hb_len = uart_make_heartbeat(heartbeat_counter++, txbuf, sizeof(txbuf));
+				if (hb_len > 0) {
+					HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, hb_len, 1000);
+					if (status != HAL_OK) {
+						// TODO: handle transmission error
+					} else {
+						// Give receiver time to process frame
+						osDelay(50);
+					}
+				}
+				last_heartbeat_ms = now;
+			}
+			frame_rotation = 0;
+			break;
 		}
 
-		osDelay(200);
+		osDelay(250);
 	}
   /* USER CODE END 5 */
 }

@@ -24,6 +24,7 @@
 #include "bts71040.hpp"
 #include "UartRxPacket.hpp"
 #include "PrimaryBmsFleet.hpp"
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -74,59 +75,84 @@ static void MX_ICACHE_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-static uint8_t rx_body_buf[256]; // payload max + 2 CRC
-static UartPktRx rx1;
+
 
 // Fleet data structure to store received data from Secondary MCU
 static PrimaryBmsFleet fleet;
+static volatile uint8_t  last_uart_type = 0;
+static volatile uint16_t last_uart_len = 0;
+static volatile uint32_t last_uart_tick = 0;
+static volatile uint8_t  last_update_status = 0; // 0 = idle, 1/2 summary success/fail, 3/4 module success/fail, 5/6 heartbeat success/fail
+static volatile uint8_t  last_module_idx = 0xFF;
+static volatile uint32_t last_heartbeat_counter = 0;
+static volatile uint32_t uart_error_count = 0;
+static volatile uint32_t uart_last_error_flags = 0;
 
-static void on_uart_packet(const uint8_t* payload, uint16_t len, void* user)
+static void on_uart_packet(const uint8_t* payload, uint16_t len)
 {
-    (void)user;
+
     
-    // Validate minimum payload length
     if (len < 1) return;
+
+    last_uart_type = payload[0];
+    last_uart_len  = len;
+    last_uart_tick = HAL_GetTick();
+    last_update_status = 0;
     
-    // Process based on message type
     switch (payload[0]) {
-    case 0x10:  // UART_FLEET_SUMMARY
-        fleet.update_from_uart_payload(payload, len, HAL_GetTick());
-        // Optional: Toggle LED to indicate successful reception
-        HAL_GPIO_TogglePin(GPIOC, OK_Pin);
+    case UART_MODULE_SUMMARY: {
+        bool updated = fleet.update_module_summary(payload, len, HAL_GetTick());
+        last_update_status = updated ? 3 : 4;
+        if (updated && len >= sizeof(UartModuleSummaryPayload)) {
+            last_module_idx = payload[1];
+        }
         break;
-        
-    case 0x11:  // UART_MODULE_SUMMARY (future use)
-        // TODO: Handle module summary if needed
+    }
+    
+    case UART_HEARTBEAT: {
+        bool updated = fleet.update_heartbeat(payload, len, HAL_GetTick());
+        last_update_status = updated ? 5 : 6;
+        if (updated) {
+            last_heartbeat_counter = fleet.heartbeat().counter;
+        }
         break;
-        
-    case 0x12:  // UART_HEARTBEAT (future use)
-        // TODO: Handle heartbeat if needed
-        break;
-        
+    }
+    
     default:
-        // Unknown message type - ignore
         break;
     }
 }
 
-void UART1_Packets_Init(void)
-{
-	uart_pkt_init(&rx1, &huart4, rx_body_buf, sizeof(rx_body_buf), on_uart_packet, NULL);
-    uart_pkt_start(&rx1);  // ← primes the first interrupt receive (header)
-}
+static uint8_t rxbuf[64];
+static volatile uint16_t rx_size;
+static uint8_t tempBuf[64];
 
-// HAL hooks (put in your user callbacks file)
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if (huart->Instance ==  UART4) {
-        uart_pkt_on_rx_cplt(&rx1);
-    }
-}
-
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
     if (huart->Instance == UART4) {
-        uart_pkt_on_error(&rx1);
+    	if(rxbuf[0] == 0xA5 && rxbuf[1] == 0x5A){
+    		uint16_t length = rxbuf[2] | ((uint16_t)rxbuf[3] >> 8);
+    		memcpy(tempBuf, rxbuf + 4, length);
+    		on_uart_packet(tempBuf, length);
+    	}
+
+
+        HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf)); // re-arm
+        HAL_GPIO_TogglePin(GPIOC, OK_Pin);
+    }
+}
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == UART4)
+    {
+        volatile uint32_t err = HAL_UART_GetError(huart); // read for debug
+        __HAL_UART_CLEAR_OREFLAG(huart);
+        __HAL_UART_CLEAR_FEFLAG(huart);
+        __HAL_UART_CLEAR_NEFLAG(huart);
+        __HAL_UART_CLEAR_PEFLAG(huart);
+
+        HAL_UART_AbortReceive(huart); // ensure RxState READY
+        HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf));
     }
 }
 
@@ -172,7 +198,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   // Initialize UART packet receiver (replaces manual HAL_UART_Receive_IT)
-  UART1_Packets_Init();
+  //UART1_Packets_Init();
+  HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf));
+
 
   // Map to your real pins (adjust if needed):
   Bts71040::Pins pins = {
@@ -195,32 +223,40 @@ int main(void)
 	if (fleet.has_data(HAL_GetTick())) {
 		const auto& summary = fleet.summary();
 		
-		// Example: Check for critical conditions
 		if (summary.hottest_temp_C > 45.0f) {
-			// High temperature warning
 			HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_SET);
 		} else {
 			HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_RESET);
 		}
 		
 		if (summary.lowest_cell_mV < 3000) {
-			// Low voltage warning
 			HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
 		} else {
 			HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_RESET);
 		}
 		
-		// Calculate and check latency
 		uint32_t latency = summary.latency_ms(HAL_GetTick());
 		if (latency > 500) {
-			// High latency - communication delay
+			// High latency - communication delay (placeholder for action)
+		}
+
+		for (uint8_t i = 0; i < PrimaryBmsFleetCfg::MAX_MODULES; ++i) {
+			if (!fleet.module_valid(i)) continue;
+			const auto& mod = fleet.module(i);
+			(void)mod;
+			// TODO: act on module-level data (e.g., display values, triggers)
 		}
 	} else {
-		// No data received - secondary MCU may be offline
 		HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
 	}
-	
-	HAL_GPIO_TogglePin(GPIOB, IN0_Pin);
+
+	if (fleet.heartbeat_valid()) {
+		const auto& hb = fleet.heartbeat();
+		(void)hb;
+		// TODO: monitor heartbeat counter or link health
+	}
+
+	//HAL_GPIO_TogglePin(GPIOC, OK_Pin);
 	HAL_Delay(500);
 
 

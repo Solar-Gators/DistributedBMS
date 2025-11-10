@@ -53,6 +53,7 @@ public:
 
     int hottest_module(uint32_t now_ms, float* out_temp = nullptr) const;
     int lowest_cell_module(uint32_t now_ms, uint16_t* out_mV = nullptr) const;
+    bool has_any_data(uint8_t idx) const;
 
 private:
     std::array<ModuleData, BmsFleetCfg::MAX_MODULES> modules_;

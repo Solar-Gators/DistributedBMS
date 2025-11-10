@@ -106,6 +106,7 @@ int BmsFleet::hottest_module(uint32_t now_ms, float* out_temp) const {
     for (uint8_t i = 0; i < BmsFleetCfg::MAX_MODULES; ++i) {
         const auto& M = modules_[i];
         if (!M.online(now_ms)) continue;
+        if (!M.got_type0) continue;
         if (M.high_C > maxT) { maxT = M.high_C; best = i; }
     }
     if (out_temp && best >= 0) *out_temp = maxT;
@@ -117,8 +118,15 @@ int BmsFleet::lowest_cell_module(uint32_t now_ms, uint16_t* out_mV) const {
     for (uint8_t i = 0; i < BmsFleetCfg::MAX_MODULES; ++i) {
         const auto& M = modules_[i];
         if (!M.online(now_ms)) continue;
+        if (!M.got_type1) continue;
         if (M.low_mV < minV) { minV = M.low_mV; best = i; }
     }
     if (out_mV && best >= 0) *out_mV = minV;
     return best;
+}
+
+bool BmsFleet::has_any_data(uint8_t idx) const {
+    if (idx >= BmsFleetCfg::MAX_MODULES) return false;
+    const auto& M = modules_[idx];
+    return M.got_type0 || M.got_type1 || M.got_type2;
 }

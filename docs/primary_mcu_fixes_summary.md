@@ -42,12 +42,24 @@
 ### 3. Enhanced Secondary MCU UART Transmission
 
 **Changes to `DistributedBMSSecondary/Core/Src/main.cpp`:**
-1. **Added online module validation**:
-   - Checks if any modules are online before transmitting
-   - Only sends data when valid modules are present
-2. **Added error handling**:
+1. **Frame rotation system**:
+   - Rotates between fleet summary, module summary, and heartbeat
+   - Sends only one frame type per cycle to prevent overrun errors
+   - 50ms delay after each transmission
+   - 250ms main loop delay
+
+2. **Data availability check**:
+   - Uses `fleet.has_any_data()` to check if modules have received CAN data
+   - Only transmits when data is available
+
+3. **Error handling**:
    - Checks return value of `HAL_UART_Transmit()`
    - Handles transmission errors gracefully
+
+4. **Heartbeat timing**:
+   - Uses `osKernelGetTickCount()` for reliable timing
+   - Sends heartbeat once per second when due
+   - Tracks actual interval in `g_lastHeartbeatInterval`
 
 ## Data Flow (Fixed)
 
@@ -56,11 +68,17 @@ Daughter Boards (CAN)
     ↓
 Secondary MCU (BmsFleet aggregates data)
     ↓
-Secondary MCU (UART transmission every 200ms)
+Secondary MCU (UART transmission - Frame rotation system)
+    ├─ Fleet Summary (~900ms)
+    ├─ Module Summary (~900ms, round-robin)
+    └─ Heartbeat (~1000ms)
     ↓
-Primary MCU (UART reception - NOW WORKING!)
+Primary MCU (UART reception - Interrupt-driven)
     ↓
 Primary MCU (PrimaryBmsFleet stores data)
+    ├─ FleetSummaryData
+    ├─ ModuleSummaryData[8]
+    └─ HeartbeatData
     ↓
 Primary MCU (Main loop processes data)
 ```
@@ -80,12 +98,37 @@ if (fleet.has_data(HAL_GetTick())) {
     // Check latency
     uint32_t latency = summary.latency_ms(HAL_GetTick());
     
+    // Access module data
+    for (uint8_t i = 0; i < PrimaryBmsFleetCfg::MAX_MODULES; ++i) {
+        if (fleet.module_valid(i)) {
+            const auto& mod = fleet.module(i);
+            // mod.high_temp_C, mod.avg_cell_mV, etc.
+        }
+    }
+    
+    // Check heartbeat
+    if (fleet.heartbeat_valid()) {
+        uint32_t counter = fleet.heartbeat().counter;
+    }
+    
     // Make decisions based on data
     if (hottest_temp > 45.0f) {
         // Handle high temperature
     }
 }
 ```
+
+## Debugging Variables
+
+**Primary MCU** (watch in debugger):
+- `last_uart_type`: Last received message type (0x10, 0x11, 0x12)
+- `last_update_status`: Update result (1/3/5 = success, 2/4/6 = fail)
+- `uart_error_count`: Total UART errors
+- `uart_last_error_flags`: Last error code (8 = overrun)
+
+**Secondary MCU**:
+- `frame_rotation`: Current frame type (0=fleet, 1=module, 2=heartbeat)
+- `g_lastHeartbeatInterval`: Actual heartbeat interval (~1000ms)
 
 ## Testing Checklist
 

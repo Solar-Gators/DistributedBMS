@@ -8,43 +8,89 @@
 #include "PrimaryBmsFleet.hpp"
 #include <cstring>
 
-// UART payload structure (must match UartFleetPack.hpp from Secondary MCU)
-typedef struct __attribute__((packed)) {
-    uint8_t  type;           // = 0x10 (UART_FLEET_SUMMARY)
-    uint8_t  hottest_idx;    // 0..MAX_MODULES-1, 0xFF if none
-    int16_t  hottest_c_x10;  // °C*10
-    uint8_t  lowest_idx;     // module that has the lowest cell
-    uint16_t lowest_mV;      // mV (cell)
-    uint8_t  num_online;     // how many modules online
-    uint32_t now_ms;         // sender time (for latency checks)
-} FleetSummaryPayload;
+static_assert(sizeof(UartFleetSummaryPayload)   == 12, "Unexpected fleet summary payload size");
+static_assert(sizeof(UartModuleSummaryPayload)  == 18, "Unexpected module summary payload size");
+static_assert(sizeof(UartHeartbeatPayload)      == 4,  "Unexpected heartbeat payload size");
 
 PrimaryBmsFleet::PrimaryBmsFleet() {
     summary_.clear();
 }
 
 bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t* payload, uint16_t len, uint32_t now_ms) {
-    // Validate payload
-    if (!payload || len < sizeof(FleetSummaryPayload)) {
+    if (!payload || len < sizeof(UartFleetSummaryPayload)) {
         return false;
     }
-    
-    const FleetSummaryPayload* p = (const FleetSummaryPayload*)payload;
-    
-    // Validate message type
-    if (p->type != 0x10) {  // UART_FLEET_SUMMARY
+
+    UartFleetSummaryPayload p;
+    memcpy(&p, payload, sizeof(p));
+
+    if (p.type != UART_FLEET_SUMMARY) {
         return false;
     }
-    
-    // Update fleet summary data
-    summary_.hottest_module_idx = p->hottest_idx;
-    summary_.hottest_temp_C = from_cdeg10(p->hottest_c_x10);
-    summary_.lowest_cell_module_idx = p->lowest_idx;
-    summary_.lowest_cell_mV = p->lowest_mV;
-    summary_.num_online_modules = p->num_online;
-    summary_.secondary_timestamp_ms = p->now_ms;
-    summary_.last_update_ms = now_ms;
-    
+
+    summary_.hottest_module_idx     = p.hottest_idx;
+    summary_.hottest_temp_C         = uart_from_cdeg10(p.hottest_c_x10);
+    summary_.lowest_cell_module_idx = p.lowest_idx;
+    summary_.lowest_cell_mV         = p.lowest_mV;
+    summary_.num_online_modules     = p.num_online;
+    summary_.secondary_timestamp_ms = p.now_ms;
+    summary_.last_update_ms         = now_ms;
+
+    return true;
+}
+
+bool PrimaryBmsFleet::update_module_summary(const uint8_t* payload, uint16_t len, uint32_t now_ms) {
+    if (!payload || len < sizeof(UartModuleSummaryPayload)) {
+        return false;
+    }
+
+    UartModuleSummaryPayload p;
+    memcpy(&p, payload, sizeof(p));
+
+    if (p.type != UART_MODULE_SUMMARY) {
+        return false;
+    }
+
+    if (p.module_idx >= PrimaryBmsFleetCfg::MAX_MODULES) {
+        return false;
+    }
+
+    ModuleSummaryData& M = modules_[p.module_idx];
+    M.valid           = true;
+    M.module_idx      = p.module_idx;
+    M.high_temp_C     = uart_from_cdeg10(p.high_c_x10);
+    M.high_temp_cell  = p.high_temp_cell;
+    M.high_mV         = p.high_mV;
+    M.low_mV          = p.low_mV;
+    M.low_idx         = p.low_idx;
+    M.high_idx        = p.high_idx;
+    M.avg_temp_C      = uart_from_cdeg10(p.avg_c_x10);
+    M.avg_cell_mV     = p.avg_cell_mV;
+    M.num_cells       = p.num_cells;
+    M.age_ms          = p.age_ms;
+    M.last_update_ms  = now_ms;
+
+    return true;
+}
+
+bool PrimaryBmsFleet::update_heartbeat(const uint8_t* payload, uint16_t len, uint32_t now_ms) {
+    if (!payload || len < sizeof(UartHeartbeatPayload)) {
+        return false;
+    }
+
+    UartHeartbeatPayload p;
+    memcpy(&p, payload, sizeof(p));
+
+    if (p.type != UART_HEARTBEAT) {
+        return false;
+    }
+
+    heartbeat_.valid = true;
+    heartbeat_.counter = ((uint32_t)p.counter_msb << 16) |
+                         ((uint32_t)p.counter_mid << 8)  |
+                         ((uint32_t)p.counter_lsb);
+    heartbeat_.last_update_ms = now_ms;
+
     return true;
 }
 

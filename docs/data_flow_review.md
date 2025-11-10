@@ -70,50 +70,97 @@ fleet.register_node(0x101, 0);  // Maps CAN ID 0x101 to module index 0
 
 #### Transmission (Secondary MCU)
 
-**Location**: `DistributedBMSSecondary/Core/Src/main.cpp` (Line 369-388)
+**Location**: `DistributedBMSSecondary/Core/Src/main.cpp` - `StartDefaultTask()`
+
+**Frame Rotation System**:
+The secondary MCU uses a rotation system to prevent UART overrun errors by sending only one frame type per cycle:
+
+1. **Cycle 1**: Fleet Summary (if data available)
+2. **Cycle 2**: Module Summary (if data available, round-robin)
+3. **Cycle 3**: Heartbeat (if 1 second elapsed)
+4. **Cycle 4**: Back to Fleet Summary...
+
+**Timing**:
+- Main loop delay: 250ms
+- Post-transmission delay: 50ms (after successful send)
+- Effective frame spacing: ~300ms minimum between frames
 
 **Implementation**:
 ```cpp
-void StartDefaultTask(void *argument) {
-    uint8_t txbuf[64];
-    for(;;) {
-        size_t txlen = uart_make_fleet_summary(fleet, HAL_GetTick(), txbuf, sizeof(txbuf));
-        if (txlen > 0) {
-            HAL_UART_Transmit(&huart2, txbuf, txlen, 1000);
+static uint8_t frame_rotation = 0;  // 0=fleet, 1=module, 2=heartbeat
+
+for(;;) {
+    switch (frame_rotation) {
+    case 0:  // Fleet summary
+        uart_make_fleet_summary(...);
+        HAL_UART_Transmit(...);
+        osDelay(50);  // Give receiver time
+        frame_rotation = 1;
+        break;
+    case 1:  // Module summary (round-robin)
+        uart_make_module_summary(...);
+        HAL_UART_Transmit(...);
+        osDelay(50);
+        frame_rotation = 2;
+        break;
+    case 2:  // Heartbeat
+        if (1 second elapsed) {
+            uart_make_heartbeat(...);
+            HAL_UART_Transmit(...);
+            osDelay(50);
         }
-        osDelay(200);
+        frame_rotation = 0;
+        break;
     }
+    osDelay(250);
 }
 ```
 
 **Frame Format** (from `UartFramer.cpp`):
 - `[SOF0=0xA5][SOF1=0x5A][LEN_LOW][LEN_HIGH][PAYLOAD...][CRC16_LOW][CRC16_HIGH]`
-- Payload: `FleetSummaryPayload` (11 bytes)
-- Total frame: 17 bytes (6 overhead + 11 payload)
+- Total frame: 6 bytes overhead + payload length
 
-**Payload Content** (`UartFleetPack.hpp`):
-- Type: `UART_FLEET_SUMMARY` (0x10)
-- Hottest module index and temperature (°C × 10)
-- Lowest cell module index and voltage (mV)
-- Number of online modules
-- Timestamp (ms)
+**Message Types**:
+1. **Fleet Summary** (Type 0x10, 12 bytes payload):
+   - Hottest module index and temperature (°C × 10)
+   - Lowest cell module index and voltage (mV)
+   - Number of online modules
+   - Timestamp (ms)
+
+2. **Module Summary** (Type 0x11, 18 bytes payload):
+   - Detailed per-module statistics
+   - Temperature extremes, voltage extremes, averages
+   - Data age
+
+3. **Heartbeat** (Type 0x12, 4 bytes payload):
+   - Counter value (24-bit)
+   - Link health monitoring
 
 #### Reception (Primary MCU)
 
 **Location**: `DistributedBMSPrimary/Core/Src/main.cpp`
 
 **UART Reception Setup**:
-- Line 76-77: Static buffer and receiver structure
-- Line 81-86: `on_uart_packet()` callback (currently empty!)
-- Line 88-92: Initialization function (not called in main!)
-- Line 95-100: `HAL_UART_RxCpltCallback()` properly wired
-- Line 102-107: `HAL_UART_ErrorCallback()` properly wired
+- Static buffer: `rx_body_buf[256]` for payload storage
+- `UartPktRx rx1`: Frame receiver state machine
+- `UART1_Packets_Init()`: Called after UART initialization
+- `on_uart_packet()`: Processes received frames by type
+- `HAL_UART_RxCpltCallback()`: Wired to `uart_pkt_on_rx_cplt()`
+- `HAL_UART_ErrorCallback()`: Wired to `uart_pkt_on_error()`
 
 **Frame Parsing** (`UartRxPacket.cpp`):
 - State machine: `RX_WAIT_HDR` → `RX_WAIT_BODY`
-- SOF alignment handling
+- SOF alignment handling (handles byte misalignment)
 - CRC16-CCITT validation
 - Calls `on_packet()` callback on valid frame
+
+**Data Processing** (`on_uart_packet()`):
+- Parses message type from payload[0]
+- Routes to appropriate handler:
+  - `UART_FLEET_SUMMARY` (0x10): Updates fleet summary
+  - `UART_MODULE_SUMMARY` (0x11): Updates module data
+  - `UART_HEARTBEAT` (0x12): Updates heartbeat counter
+- Updates debug variables for monitoring
 
 ## Issues Identified
 
