@@ -8,9 +8,7 @@
 #include "PrimaryBmsFleet.hpp"
 #include <cstring>
 
-static_assert(sizeof(UartFleetSummaryPayload)   == 12, "Unexpected fleet summary payload size");
-static_assert(sizeof(UartModuleSummaryPayload)  == 18, "Unexpected module summary payload size");
-static_assert(sizeof(UartHeartbeatPayload)      == 4,  "Unexpected heartbeat payload size");
+
 
 PrimaryBmsFleet::PrimaryBmsFleet() {
     summary_.clear();

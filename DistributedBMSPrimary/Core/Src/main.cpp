@@ -22,7 +22,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "bts71040.hpp"
-#include "UartRxPacket.hpp"
 #include "PrimaryBmsFleet.hpp"
 #include <string.h>
 /* USER CODE END Includes */
@@ -79,47 +78,27 @@ static void MX_ICACHE_Init(void);
 
 // Fleet data structure to store received data from Secondary MCU
 static PrimaryBmsFleet fleet;
-static volatile uint8_t  last_uart_type = 0;
-static volatile uint16_t last_uart_len = 0;
-static volatile uint32_t last_uart_tick = 0;
-static volatile uint8_t  last_update_status = 0; // 0 = idle, 1/2 summary success/fail, 3/4 module success/fail, 5/6 heartbeat success/fail
-static volatile uint8_t  last_module_idx = 0xFF;
-static volatile uint32_t last_heartbeat_counter = 0;
-static volatile uint32_t uart_error_count = 0;
-static volatile uint32_t uart_last_error_flags = 0;
+
+
 
 static void on_uart_packet(const uint8_t* payload, uint16_t len)
 {
 
-    
     if (len < 1) return;
 
-    last_uart_type = payload[0];
-    last_uart_len  = len;
-    last_uart_tick = HAL_GetTick();
-    last_update_status = 0;
-    
     switch (payload[0]) {
-    case UART_MODULE_SUMMARY: {
-        bool updated = fleet.update_module_summary(payload, len, HAL_GetTick());
-        last_update_status = updated ? 3 : 4;
-        if (updated && len >= sizeof(UartModuleSummaryPayload)) {
-            last_module_idx = payload[1];
-        }
-        break;
-    }
-    
-    case UART_HEARTBEAT: {
-        bool updated = fleet.update_heartbeat(payload, len, HAL_GetTick());
-        last_update_status = updated ? 5 : 6;
-        if (updated) {
-            last_heartbeat_counter = fleet.heartbeat().counter;
-        }
-        break;
-    }
-    
-    default:
-        break;
+		case UART_MODULE_SUMMARY: {
+			fleet.update_module_summary(payload, len, HAL_GetTick());
+			break;
+		}
+
+		case UART_HEARTBEAT: {
+			fleet.update_heartbeat(payload, len, HAL_GetTick());
+			break;
+		}
+
+		default:
+			break;
     }
 }
 
@@ -145,7 +124,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == UART4)
     {
-        volatile uint32_t err = HAL_UART_GetError(huart); // read for debug
         __HAL_UART_CLEAR_OREFLAG(huart);
         __HAL_UART_CLEAR_FEFLAG(huart);
         __HAL_UART_CLEAR_NEFLAG(huart);
