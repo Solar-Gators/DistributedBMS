@@ -371,18 +371,30 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
 
-	uint8_t frame[64];
-	size_t n = uart_make_fleet_summary(fleet, HAL_GetTick(), frame, sizeof(frame));
-
-	uint8_t txbuf[UART_ENCODED_SIZE(n)];
-	size_t txlen = uart_encode_frame(frame, (uint16_t)n, txbuf, sizeof(txbuf));
-
-
+	uint8_t txbuf[64];  // Buffer for encoded frame (SOF + LEN + payload + CRC)
 
 	for(;;)
 	{
-		if (txlen > 0) {
-			HAL_UART_Transmit(&huart2, txbuf, txlen, 1000);
+		// Check if we have any online modules before sending
+		uint8_t online_count = 0;
+		for (uint8_t i = 0; i < BmsFleetCfg::MAX_MODULES; ++i) {
+			if (fleet.module(i).online(HAL_GetTick())) {
+				online_count++;
+			}
+		}
+		
+		// Only send if we have online modules
+		if (online_count > 0) {
+			// Generate fresh fleet summary and encode it directly into txbuf
+			size_t txlen = uart_make_fleet_summary(fleet, HAL_GetTick(), txbuf, sizeof(txbuf));
+
+			if (txlen > 0) {
+				HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, txlen, 1000);
+				if (status != HAL_OK) {
+					// Transmission error - could set fault flag here
+					// For now, just continue and retry on next cycle
+				}
+			}
 		}
 
 		osDelay(200);

@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "bts71040.hpp"
 #include "UartRxPacket.hpp"
+#include "PrimaryBmsFleet.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,13 +77,36 @@ static void MX_ICACHE_Init(void);
 static uint8_t rx_body_buf[256]; // payload max + 2 CRC
 static UartPktRx rx1;
 
-uint8_t rx_buff[10];
+// Fleet data structure to store received data from Secondary MCU
+static PrimaryBmsFleet fleet;
 
 static void on_uart_packet(const uint8_t* payload, uint16_t len, void* user)
 {
     (void)user;
-    // payload[0] can be your TYPE (0x01 summary, 0x20 snapshot, etc.)
-    // switch (payload[0]) { ... }
+    
+    // Validate minimum payload length
+    if (len < 1) return;
+    
+    // Process based on message type
+    switch (payload[0]) {
+    case 0x10:  // UART_FLEET_SUMMARY
+        fleet.update_from_uart_payload(payload, len, HAL_GetTick());
+        // Optional: Toggle LED to indicate successful reception
+        HAL_GPIO_TogglePin(GPIOC, OK_Pin);
+        break;
+        
+    case 0x11:  // UART_MODULE_SUMMARY (future use)
+        // TODO: Handle module summary if needed
+        break;
+        
+    case 0x12:  // UART_HEARTBEAT (future use)
+        // TODO: Handle heartbeat if needed
+        break;
+        
+    default:
+        // Unknown message type - ignore
+        break;
+    }
 }
 
 void UART1_Packets_Init(void)
@@ -147,8 +171,8 @@ int main(void)
   MX_ICACHE_Init();
   /* USER CODE BEGIN 2 */
 
-
-  HAL_UART_Receive_IT(&huart4, rx_buff, 1); // enable uart interrupt
+  // Initialize UART packet receiver (replaces manual HAL_UART_Receive_IT)
+  UART1_Packets_Init();
 
   // Map to your real pins (adjust if needed):
   Bts71040::Pins pins = {
@@ -167,7 +191,35 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	HAL_GPIO_TogglePin(GPIOC, OK_Pin);
+	// Example: Access fleet data
+	if (fleet.has_data(HAL_GetTick())) {
+		const auto& summary = fleet.summary();
+		
+		// Example: Check for critical conditions
+		if (summary.hottest_temp_C > 45.0f) {
+			// High temperature warning
+			HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_SET);
+		} else {
+			HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_RESET);
+		}
+		
+		if (summary.lowest_cell_mV < 3000) {
+			// Low voltage warning
+			HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
+		} else {
+			HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_RESET);
+		}
+		
+		// Calculate and check latency
+		uint32_t latency = summary.latency_ms(HAL_GetTick());
+		if (latency > 500) {
+			// High latency - communication delay
+		}
+	} else {
+		// No data received - secondary MCU may be offline
+		HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
+	}
+	
 	HAL_GPIO_TogglePin(GPIOB, IN0_Pin);
 	HAL_Delay(500);
 
