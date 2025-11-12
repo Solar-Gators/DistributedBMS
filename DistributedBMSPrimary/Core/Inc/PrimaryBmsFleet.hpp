@@ -110,7 +110,7 @@ public:
     bool update_from_uart_payload(const uint8_t* payload, uint16_t len, uint32_t now_ms);
     bool update_module_summary(const uint8_t* payload, uint16_t len, uint32_t now_ms);
     bool update_heartbeat(const uint8_t* payload, uint16_t len, uint32_t now_ms);
-    
+    bool update_summary_from_modules(uint32_t now_ms);
     /**
      * Get current fleet summary data
      */

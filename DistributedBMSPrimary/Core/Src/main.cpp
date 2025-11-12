@@ -197,42 +197,29 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	// Example: Access fleet data
-	if (fleet.has_data(HAL_GetTick())) {
-		const auto& summary = fleet.summary();
+	fleet.update_summary_from_modules(HAL_GetTick());
 		
-		if (summary.hottest_temp_C > 45.0f) {
-			HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_SET);
-		} else {
-			HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_RESET);
-		}
+	const auto& summary = fleet.summary();
 		
-		if (summary.lowest_cell_mV < 3000) {
-			HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
-		} else {
-			HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_RESET);
-		}
-		
-		uint32_t latency = summary.latency_ms(HAL_GetTick());
-		if (latency > 500) {
-			// High latency - communication delay (placeholder for action)
-		}
-
-		for (uint8_t i = 0; i < PrimaryBmsFleetCfg::MAX_MODULES; ++i) {
-			if (!fleet.module_valid(i)) continue;
-			const auto& mod = fleet.module(i);
-			(void)mod;
-			// TODO: act on module-level data (e.g., display values, triggers)
-		}
+	if (summary.hottest_temp_C > 45.0f) {
+		HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_SET);
 	} else {
-		HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_RESET);
 	}
 
-	if (fleet.heartbeat_valid()) {
-		const auto& hb = fleet.heartbeat();
-		(void)hb;
-		// TODO: monitor heartbeat counter or link health
+	if (summary.lowest_cell_mV < 2500) {
+		HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
+	} else {
+		HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_RESET);
 	}
+
+	uint32_t latency = summary.latency_ms(HAL_GetTick());
+	if (latency > 500) {
+		// High latency - communication delay (placeholder for action)
+	}
+
+
+
 
 	//HAL_GPIO_TogglePin(GPIOC, OK_Pin);
 	HAL_Delay(500);

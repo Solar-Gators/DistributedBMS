@@ -92,3 +92,44 @@ bool PrimaryBmsFleet::update_heartbeat(const uint8_t* payload, uint16_t len, uin
     return true;
 }
 
+bool PrimaryBmsFleet::update_summary_from_modules(uint32_t now_ms) {
+    float hottest_temp = -1000.0f;
+    uint8_t hottest_idx = 0xFF;
+    uint16_t lowest_mV = 0xFFFF;
+    uint8_t lowest_idx = 0xFF;
+    uint8_t num_online = 0;
+
+    for (uint8_t i = 0; i < PrimaryBmsFleetCfg::MAX_MODULES; i++) {
+        const ModuleSummaryData& M = modules_[i];
+        if (!M.valid) continue;
+
+
+
+        num_online++;
+
+        if (M.high_temp_C > hottest_temp) {
+            hottest_temp = M.high_temp_C;
+            hottest_idx = i;
+        }
+
+        if (M.low_mV < lowest_mV) {
+            lowest_mV = M.low_mV;
+            lowest_idx = i;
+        }
+    }
+
+    if (num_online == 0)
+        return false; // no valid data
+
+    summary_.hottest_module_idx     = hottest_idx;
+    summary_.hottest_temp_C         = hottest_temp;
+    summary_.lowest_cell_module_idx = lowest_idx;
+    summary_.lowest_cell_mV         = lowest_mV;
+    summary_.num_online_modules     = num_online;
+    summary_.secondary_timestamp_ms = now_ms;
+    summary_.last_update_ms         = now_ms;
+
+    return true;
+}
+
+
