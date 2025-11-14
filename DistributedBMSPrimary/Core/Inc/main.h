@@ -83,7 +83,7 @@ void Error_Handler(void);
 #define STB_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-
+void SystemClock_Config(void);
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

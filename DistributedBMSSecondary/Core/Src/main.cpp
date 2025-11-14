@@ -398,23 +398,9 @@ void StartDefaultTask(void *argument)
 
 		// Rotate between frame types to avoid overwhelming the receiver
 		switch (frame_rotation) {
-		case 0:  // Fleet summary
-			if (have_data) {
-				size_t txlen = uart_make_fleet_summary(fleet, now, txbuf, sizeof(txbuf));
-				if (txlen > 0) {
-					HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, txlen, 1000);
-					if (status != HAL_OK) {
-						// TODO: handle transmission error (set fault flag?)
-					} else {
-						// Give receiver time to process frame
-						osDelay(50);
-					}
-				}
-			}
-			frame_rotation = 1;
-			break;
 
-		case 1:  // Module summary
+
+		case 0:  // Module summary
 			if (have_data) {
 				for (uint8_t attempts = 0; attempts < BmsFleetCfg::MAX_MODULES; ++attempts) {
 					uint8_t idx = module_cursor;
@@ -436,10 +422,10 @@ void StartDefaultTask(void *argument)
 					}
 				}
 			}
-			frame_rotation = 2;
+			frame_rotation = 1;
 			break;
 
-		case 2:  // Heartbeat
+		case 1:  // Heartbeat
 			if ((now - last_heartbeat_ms) >= 1000U) {
 				uint32_t interval = now - last_heartbeat_ms;
 				g_lastHeartbeatInterval = interval;

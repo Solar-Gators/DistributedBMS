@@ -95,15 +95,18 @@ bool PrimaryBmsFleet::update_heartbeat(const uint8_t* payload, uint16_t len, uin
 bool PrimaryBmsFleet::update_summary_from_modules(uint32_t now_ms) {
     float hottest_temp = -1000.0f;
     uint8_t hottest_idx = 0xFF;
+
     uint16_t lowest_mV = 0xFFFF;
     uint8_t lowest_idx = 0xFF;
+
+    uint16_t highest_mV = 0;           // <-- NEW
+    uint8_t highest_idx = 0xFF;        // <-- NEW
+
     uint8_t num_online = 0;
 
     for (uint8_t i = 0; i < PrimaryBmsFleetCfg::MAX_MODULES; i++) {
         const ModuleSummaryData& M = modules_[i];
         if (!M.valid) continue;
-
-
 
         num_online++;
 
@@ -116,18 +119,30 @@ bool PrimaryBmsFleet::update_summary_from_modules(uint32_t now_ms) {
             lowest_mV = M.low_mV;
             lowest_idx = i;
         }
+
+        // NEW: track highest cell mV -------------------------
+        if (M.high_mV > highest_mV) {   // <-- NEW
+            highest_mV = M.high_mV;    // <-- NEW
+            highest_idx = i;           // <-- NEW
+        }
+        // ----------------------------------------------------
     }
 
     if (num_online == 0)
-        return false; // no valid data
+        return false;
 
-    summary_.hottest_module_idx     = hottest_idx;
-    summary_.hottest_temp_C         = hottest_temp;
-    summary_.lowest_cell_module_idx = lowest_idx;
-    summary_.lowest_cell_mV         = lowest_mV;
-    summary_.num_online_modules     = num_online;
-    summary_.secondary_timestamp_ms = now_ms;
-    summary_.last_update_ms         = now_ms;
+    summary_.hottest_module_idx       = hottest_idx;
+    summary_.hottest_temp_C           = hottest_temp;
+
+    summary_.lowest_cell_module_idx   = lowest_idx;
+    summary_.lowest_cell_mV           = lowest_mV;
+
+    summary_.highest_cell_module_idx  = highest_idx;   // <-- NEW
+    summary_.highest_cell_mV          = highest_mV;    // <-- NEW
+
+    summary_.num_online_modules       = num_online;
+    summary_.secondary_timestamp_ms   = now_ms;
+    summary_.last_update_ms           = now_ms;
 
     return true;
 }

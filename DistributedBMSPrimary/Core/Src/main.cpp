@@ -18,17 +18,24 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "usb_device.h"
+#include "usbd_cdc_if.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "bts71040.hpp"
 #include "PrimaryBmsFleet.hpp"
 #include <string.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+#define USB_BUFLEN 128
 
+#define RXBUF_SIZE    128
+#define TEMPBUF_SIZE  128
+#define MAX_PACKET_LEN (TEMPBUF_SIZE)
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -109,10 +116,20 @@ static uint8_t tempBuf[64];
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
     if (huart->Instance == UART4) {
-    	if(rxbuf[0] == 0xA5 && rxbuf[1] == 0x5A){
-    		uint16_t length = rxbuf[2] | ((uint16_t)rxbuf[3] >> 8);
-    		memcpy(tempBuf, rxbuf + 4, length);
-    		on_uart_packet(tempBuf, length);
+    	if (rxbuf[0] == 0xA5 && rxbuf[1] == 0x5A) {
+    	    uint16_t length = (uint16_t)rxbuf[2] | ((uint16_t)rxbuf[3] << 8);
+
+    	    if (length == 0 || length > MAX_PACKET_LEN) {
+    	        // invalid length, resync / drop packet
+    	        return;
+    	    }
+    	    if (length + 4 > RXBUF_SIZE) {
+    	        // not enough data in buffer, drop / wait for more
+    	        return;
+    	    }
+
+    	    memcpy(tempBuf, rxbuf + 4, length);
+    	    on_uart_packet(tempBuf, length);
     	}
 
 
@@ -133,6 +150,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf));
     }
 }
+uint8_t usbTxBuf[64];
 
 /* USER CODE END 0 */
 
@@ -159,6 +177,7 @@ int main(void)
 
   /* Configure the system clock */
   SystemClock_Config();
+  //PeriphCommonClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
@@ -173,6 +192,7 @@ int main(void)
   MX_TIM3_Init();
   MX_UART4_Init();
   MX_ICACHE_Init();
+  MX_USB_Device_Init();
   /* USER CODE BEGIN 2 */
 
   // Initialize UART packet receiver (replaces manual HAL_UART_Receive_IT)
@@ -198,9 +218,9 @@ int main(void)
   while (1)
   {
 	fleet.update_summary_from_modules(HAL_GetTick());
-		
+
 	const auto& summary = fleet.summary();
-		
+
 	if (summary.hottest_temp_C > 45.0f) {
 		HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_SET);
 	} else {
@@ -218,10 +238,24 @@ int main(void)
 		// High latency - communication delay (placeholder for action)
 	}
 
+    //usbTxBufLen = snprintf((char*) usbTxBuf, USB_BUFLEN, "&lu\r\n", HAL_GetTick());
+    //CDC_Transmit_FS(test, 3);
+
+	int usbTxBufLen = snprintf(
+	    (char*)usbTxBuf,
+	    USB_BUFLEN,
+	    "HOTTEST=%.1fC  LOW=%u mV  HIGH=%u mV\r\n",
+	    summary.hottest_temp_C,
+	    static_cast<unsigned>(summary.lowest_cell_mV),
+	    static_cast<unsigned>(summary.highest_cell_mV)
+	);
+
+	if (usbTxBufLen > 0 && usbTxBufLen < USB_BUFLEN) {
+	    CDC_Transmit_FS(usbTxBuf, usbTxBufLen);
+	}
 
 
-
-	//HAL_GPIO_TogglePin(GPIOC, OK_Pin);
+	HAL_GPIO_TogglePin(GPIOC, OK_Pin);
 	HAL_Delay(500);
 
 
@@ -232,7 +266,6 @@ int main(void)
 
   /* USER CODE END 3 */
 } // end extern "C"
-
 
 /**
   * @brief System Clock Configuration
@@ -253,7 +286,9 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = RCC_MSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
@@ -273,12 +308,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -308,8 +343,8 @@ static void MX_FDCAN1_Init(void)
   hfdcan1.Init.ProtocolException = DISABLE;
   hfdcan1.Init.NominalPrescaler = 16;
   hfdcan1.Init.NominalSyncJumpWidth = 1;
-  hfdcan1.Init.NominalTimeSeg1 = 2;
-  hfdcan1.Init.NominalTimeSeg2 = 2;
+  hfdcan1.Init.NominalTimeSeg1 = 1;
+  hfdcan1.Init.NominalTimeSeg2 = 1;
   hfdcan1.Init.DataPrescaler = 1;
   hfdcan1.Init.DataSyncJumpWidth = 1;
   hfdcan1.Init.DataTimeSeg1 = 1;
@@ -343,7 +378,7 @@ static void MX_I2C2_Init(void)
 
   /* USER CODE END I2C2_Init 1 */
   hi2c2.Instance = I2C2;
-  hi2c2.Init.Timing = 0x00100D14;
+  hi2c2.Init.Timing = 0x00503D58;
   hi2c2.Init.OwnAddress1 = 0;
   hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;

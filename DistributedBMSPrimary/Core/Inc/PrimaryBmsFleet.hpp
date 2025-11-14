@@ -33,6 +33,10 @@ struct FleetSummaryData {
     uint8_t  lowest_cell_module_idx = 0xFF;  // Module with lowest cell
     uint16_t lowest_cell_mV = 0;  // Lowest cell voltage in mV
     
+    uint8_t  highest_cell_module_idx = 0xFF;
+    uint16_t highest_cell_mV = 0;
+
+
     // Fleet status
     uint8_t  num_online_modules = 0;  // Number of online modules
     
