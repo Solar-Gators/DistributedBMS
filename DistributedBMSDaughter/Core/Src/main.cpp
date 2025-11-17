@@ -758,65 +758,56 @@ void StartVoltageTask(void *argument)
 
 void StartTemperatureTask(void *argument)
 {
+    CANDriver::CANFrame hightemp_msg(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 
-	bool temp_read_success = true;
-	CANDriver::CANFrame hightemp_msg(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+    for (;;)
+    {
+        bool temp_read_success = true;   // <-- reset every loop
 
-	for (;;)
-	{
+        //external temperatures
+        TempDMAComplete = false;
+        HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
+        while (!TempDMAComplete) {}
 
-		//external temperatures
-		TempDMAComplete = false;
-		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
-		while(TempDMAComplete == false){};
+        for (uint8_t i = 0; i < ADC_NUM_CONVERSIONS; i++) {
+            cellTempADC[i] = adc_buf[i];
 
-		for(uint8_t i = 0; i < 5; i++){
-			cellTempADC[i] = adc_buf[i];
+            if (adc_buf[i] == 0 || adc_buf[i] == 4095) {
+                faultManager.setFault(FaultManager::FaultType::ADC_READ_ERROR, true);
+                temp_read_success = false;
+            } else {
+                faultManager.clearFault(FaultManager::FaultType::ADC_READ_ERROR);
+            }
+        }
 
-			if (adc_buf[i] == 0 || adc_buf[i] == 4095) {
-				faultManager.setFault(FaultManager::FaultType::ADC_READ_ERROR, true);
-				temp_read_success = false;
-			}
-			else
-			{
-				faultManager.clearFault(FaultManager::FaultType::ADC_READ_ERROR);
-			}
-		}
+        osMutexAcquire(bmsMutex_id, osWaitForever);
+        if (bq.getDieTemp(&dieTemp) != HAL_OK) {
+            faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+            temp_read_success = false;
+        } else {
+            faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+        }
 
+        if (temp_read_success) {
+            bms.set_ntc_counts(cellTempADC);
+            bms.update();
+        }
+        osMutexRelease(bmsMutex_id);
 
-		//board temperatures (TMP112)
+        osDelay(10);
 
-		// Get die temperature
-		osMutexAcquire(bmsMutex_id, osWaitForever);
-		if (bq.getDieTemp(&dieTemp) != HAL_OK) {
-			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-			temp_read_success = false;
-		}
-		else
-		{
-			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-		}
+        osMutexAcquire(bmsMutex_id, osWaitForever);
+        auto& r = bms.results();
+        osMutexRelease(bmsMutex_id);
 
-		if (temp_read_success)
-		{
-			bms.set_ntc_counts(cellTempADC);
-			bms.update();
-		}
-		osMutexRelease(bmsMutex_id);
+        auto data = CanFrames::make_high_temp(r);
+        hightemp_msg.LoadData(data.bytes.data(), 8);
+        can.Send(&hightemp_msg);
 
-		osDelay(10);
-
-		osMutexAcquire(bmsMutex_id, osWaitForever);
-		auto& r = bms.results();
-		osMutexRelease(bmsMutex_id);
-
-		auto data = CanFrames::make_high_temp(r);
-		hightemp_msg.LoadData(data.bytes.data(), 8);
-		can.Send(&hightemp_msg);
-
-		osDelay(DeviceConfig::CYCLE_TIME_MS * 4);
-	}
+        osDelay(DeviceConfig::CYCLE_TIME_MS * 4);
+    }
 }
+
 
 /**
   * @brief  Period elapsed callback in non blocking mode

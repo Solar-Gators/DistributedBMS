@@ -7,7 +7,8 @@ A distributed Battery Management System (BMS) design based arround a series of d
 This project implements a distributed BMS architecture consisting of:
 
 - **Daughter Boards** (`DistributedBMSDaughter`): Monitor small groups of cells (3-5 cells each)
-- **Secondary Board** (`DistributedBMSSecondary`): Aggregates data from daughter boards and communicates with main controller
+- **Secondary MCU** (`DistributedBMSSecondary`): Aggregates data from daughter boards and communicates with main controller
+- **primary MCU** (`DistributedBMSPrimary`): Run Core BMS functionality, making fault decisions, controlling contactors, controlling battery fans, and communicating with the rest of the car.
 
 ## Architecture
 
@@ -16,8 +17,8 @@ Each Daughter Board PCB monitors the tempature and voltage of between 3-5 batter
 ## Key Features
 
 ### Daughter Board Features
-- **Cell Monitoring**: Individual cell voltage measurement using BQ76920 IC
-- **Temperature Monitoring**: NTC thermistor temperature sensing
+- **Cell Voltage Monitoring**: Individual cell voltage measurement using BQ76920 IC
+- **Cell Temperature Monitoring**: NTC thermistor temperature sensing
 - **CAN Communication**: Real-time data transmission to central BMS
 - **Fault Management**: Comprehensive system health monitoring
 - **Data Validation**: Robust data integrity checking
@@ -28,6 +29,13 @@ Each Daughter Board PCB monitors the tempature and voltage of between 3-5 batter
 - **Fleet Management**: Tracks multiple BMS modules
 - **UART Communication**: Interfaces with main controller
 - **CAN Bus Management**: Handles multiple CAN nodes
+
+### Primary Board Features
+- **Core BMS functality**: Decides weather to open or close contactors based on battery data
+- **Fan Speed Control**: Controls the speed of up to 4 battery fans
+- **CAN Flexible Data Rate Comms**: Handles CAN communication with the rest of the car
+- **USB comms**: Provides detailed data over USB for debugging
+- **Power Managment**: provides power managment for all axuilary devices on the solar car
 
 ## Hardware Requirements
 
@@ -45,7 +53,7 @@ Each Daughter Board PCB monitors the tempature and voltage of between 3-5 batter
 
 ## Software Architecture
 
-### Core Components
+### Core Components Daughter Board
 
 #### 1. Fault Management System (`FaultManager`)
 - Monitors system health and communication status

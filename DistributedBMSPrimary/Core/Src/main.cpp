@@ -109,9 +109,9 @@ static void on_uart_packet(const uint8_t* payload, uint16_t len)
     }
 }
 
-static uint8_t rxbuf[64];
+static uint8_t rxbuf[128];
 static volatile uint16_t rx_size;
-static uint8_t tempBuf[64];
+static uint8_t tempBuf[128];
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
@@ -150,8 +150,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf));
     }
 }
-uint8_t usbTxBuf[64];
-
+uint8_t usbTxBuf[128];
+static uint32_t dbg_counter = 0;
 /* USER CODE END 0 */
 
 /**
@@ -241,13 +241,17 @@ int main(void)
     //usbTxBufLen = snprintf((char*) usbTxBuf, USB_BUFLEN, "&lu\r\n", HAL_GetTick());
     //CDC_Transmit_FS(test, 3);
 
+
+
 	int usbTxBufLen = snprintf(
 	    (char*)usbTxBuf,
 	    USB_BUFLEN,
-	    "HOTTEST=%.1fC  LOW=%u mV  HIGH=%u mV\r\n",
+	    "t=%lu cnt=%lu HOTTEST=%.1fC LOW=%u HIGH=%u\r\n",
+	    HAL_GetTick(),
+	    dbg_counter++,
 	    summary.hottest_temp_C,
-	    static_cast<unsigned>(summary.lowest_cell_mV),
-	    static_cast<unsigned>(summary.highest_cell_mV)
+	    (unsigned)summary.lowest_cell_mV,
+	    (unsigned)summary.highest_cell_mV
 	);
 
 	if (usbTxBufLen > 0 && usbTxBufLen < USB_BUFLEN) {
