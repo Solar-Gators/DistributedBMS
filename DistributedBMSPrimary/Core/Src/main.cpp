@@ -25,6 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "bts71040.hpp"
 #include "PrimaryBmsFleet.hpp"
+#include "BmsController.hpp"
 #include <string.h>
 
 /* USER CODE END Includes */
@@ -150,6 +151,43 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
         HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf));
     }
 }
+
+static float read_pack_current_A(void)
+{
+    // TODO: hook this to your actual shunt/ADC reading.
+    // For now, return 0 so you can test everything else.
+    return 0.0f;
+}
+
+static bool read_key_on(void)
+{
+    // TODO: wire this to your actual key/ignition input.
+    // Example if you have KEY_Pin on some port:
+    // return (HAL_GPIO_ReadPin(KEY_GPIO_Port, KEY_Pin) == GPIO_PIN_SET);
+
+    return true;  // always "key on" for initial testing
+}
+
+static bool read_charger_present(void)
+{
+    // TODO: wire this to your charger detect input.
+    return false;
+}
+
+static const PackLimits g_pack_limits = {
+    .cell_ovp_mV_chg        = 4200,   // over-voltage during charge
+    .cell_uvp_mV            = 2500,   // under-voltage
+    .temp_max_discharge_C   = 60.0f,  // max temp for discharge
+    .temp_min_charge_C      = 5.0f,   // min temp allowed for charging
+    .ocp_discharge_A        = 200.0f, // discharge over-current threshold
+    .ocp_charge_A           = 50.0f,  // charge over-current threshold
+    .data_stale_ms          = 500     // how long before data is considered stale
+};
+
+static BmsController g_bms(g_pack_limits);
+
+static Bts71040* g_bts = nullptr;
+
 uint8_t usbTxBuf[128];
 static uint32_t dbg_counter = 0;
 /* USER CODE END 0 */
@@ -200,15 +238,16 @@ int main(void)
   HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf));
 
 
-  // Map to your real pins (adjust if needed):
   Bts71040::Pins pins = {
-      /* nCS */ GPIOA, NCS_L_Pin,         // you have NCS_A on GPIOA in MX_GPIO_Init
+      /* nCS */ GPIOA, NCS_L_Pin,
       /* INx ports */ { GPIOB, GPIOB, GPIOB, GPIOC },
       /* INx pins  */ { IN0_Pin, IN1_Pin, IN2_Pin, IN3_Pin }
   };
 
-  Bts71040 bts(&hspi1, pins);
-  bts.setCsDelays(10, 10); // small margins for tCSN lead/lag
+  static Bts71040 bts(&hspi1, pins);
+  bts.setCsDelays(10, 10);
+  g_bts = &bts;
+
 
 
   /* USER CODE END 2 */
@@ -217,50 +256,72 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	fleet.update_summary_from_modules(HAL_GetTick());
+	uint32_t now_ms = HAL_GetTick();
 
+	// 1) Keep fleet summary fresh (still uses your existing logic)
+	fleet.update_summary_from_modules(now_ms);
 	const auto& summary = fleet.summary();
 
-	if (summary.hottest_temp_C > 45.0f) {
+	// 2) Read inputs for BMS controller
+	float pack_current_A   = read_pack_current_A();
+	bool  key_on           = read_key_on();
+	bool  charger_present  = read_charger_present();
+
+	// 3) Feed data into BmsController
+	g_bms.update_from_sources(fleet, pack_current_A, now_ms);
+	g_bms.step(key_on, charger_present, now_ms);
+
+	const auto& cmds   = g_bms.contactor_cmds();
+	const auto& faults = g_bms.faults();
+	const auto& pack   = g_bms.pack();
+
+	// 4) Apply contactor commands -> BTS71040 outputs
+	if (g_bts != nullptr) {
+		// Example mapping: adjust to match your driver API
+		// Assume channel 0 = main negative, 1 = main positive, 2 = precharge
+		g_bts->setChannel(0, cmds.main_neg);
+		g_bts->setChannel(1, cmds.main_pos);
+
+		// channel 3 free for something else (fans, etc.)
+	}
+
+	// 5) Simple fault LEDs (replace your old threshold logic)
+	if (faults.active != FAULT_NONE) {
 		HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_SET);
 	} else {
 		HAL_GPIO_WritePin(GPIOC, Error_Pin, GPIO_PIN_RESET);
 	}
 
-	if (summary.lowest_cell_mV < 2500) {
+	// Optional extra indicator for data stale / comms latency:
+	uint32_t latency = summary.latency_ms(now_ms);
+	if (latency > 500 || (faults.active & FAULT_DATA_STALE)) {
 		HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_SET);
 	} else {
 		HAL_GPIO_WritePin(GPIOC, Fault_Pin, GPIO_PIN_RESET);
 	}
 
-	uint32_t latency = summary.latency_ms(HAL_GetTick());
-	if (latency > 500) {
-		// High latency - communication delay (placeholder for action)
-	}
-
-    //usbTxBufLen = snprintf((char*) usbTxBuf, USB_BUFLEN, "&lu\r\n", HAL_GetTick());
-    //CDC_Transmit_FS(test, 3);
-
-
-
+	// 6) USB debug
 	int usbTxBufLen = snprintf(
-	    (char*)usbTxBuf,
-	    USB_BUFLEN,
-	    "t=%lu cnt=%lu HOTTEST=%.1fC LOW=%u HIGH=%u\r\n",
-	    HAL_GetTick(),
-	    dbg_counter++,
-	    summary.hottest_temp_C,
-	    (unsigned)summary.lowest_cell_mV,
-	    (unsigned)summary.highest_cell_mV
+		(char*)usbTxBuf,
+		USB_BUFLEN,
+		"t=%lu cnt=%lu STATE=%d FAULTS=0x%08lX V=%.2fV I=%.1fA HOT=%.1fC LOW=%u HIGH=%u\r\n",
+		(unsigned long)now_ms,
+		(unsigned long)dbg_counter++,
+		(int)g_bms.state(),
+		(unsigned long)faults.active,
+		(double)pack.pack_voltage_V,
+		(double)pack.pack_current_A,
+		(double)pack.hottest_temp_C,
+		(unsigned)pack.lowest_cell_mV,
+		(unsigned)pack.highest_cell_mV
 	);
 
 	if (usbTxBufLen > 0 && usbTxBufLen < USB_BUFLEN) {
-	    CDC_Transmit_FS(usbTxBuf, usbTxBufLen);
+		CDC_Transmit_FS(usbTxBuf, usbTxBufLen);
 	}
 
-
 	HAL_GPIO_TogglePin(GPIOC, OK_Pin);
-	HAL_Delay(500);
+	HAL_Delay(200);
 
 
     /* USER CODE END WHILE */
