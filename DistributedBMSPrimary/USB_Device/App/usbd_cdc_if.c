@@ -295,43 +295,17 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   */
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
 {
-    // basic sanity
-    if (Len == 0) {
-        return USBD_FAIL;
-    }
-
-    if (Len > APP_TX_DATA_SIZE) {
-        Len = APP_TX_DATA_SIZE; // or return USBD_FAIL;
-    }
-
-    // 1) ensure device is configured
-    if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) {
-        return USBD_FAIL;
-    }
-
-    // 2) ensure pClassData is valid
-    if (hUsbDeviceFS.pClassData == NULL) {
-        return USBD_FAIL;
-    }
-
-    USBD_CDC_HandleTypeDef *hcdc =
-        (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-
-    // 3) extra paranoid check (catches corrupted pointers)
-    //    If you have a debugger, you can inspect hcdc here.
-    //    But at least we don't deref NULL.
-    if (hcdc == NULL) {
-        return USBD_FAIL;
-    }
-
-    if (hcdc->TxState != 0) {
-        return USBD_BUSY;
-    }
-
-    USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
-    return USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+  uint8_t result = USBD_OK;
+  /* USER CODE BEGIN 7 */
+  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+  if (hcdc->TxState != 0){
+    return USBD_BUSY;
+  }
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
+  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+  /* USER CODE END 7 */
+  return result;
 }
-
 
 /**
   * @brief  CDC_TransmitCplt_FS

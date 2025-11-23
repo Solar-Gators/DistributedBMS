@@ -69,8 +69,6 @@ void Error_Handler(void);
 #define NCS_A_GPIO_Port GPIOA
 #define NRDY_Pin GPIO_PIN_3
 #define NRDY_GPIO_Port GPIOA
-#define NCS_L_Pin GPIO_PIN_4
-#define NCS_L_GPIO_Port GPIOA
 #define IN3_Pin GPIO_PIN_5
 #define IN3_GPIO_Port GPIOC
 #define IN2_Pin GPIO_PIN_0

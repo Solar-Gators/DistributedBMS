@@ -36,7 +36,7 @@ inline void Bts71040::csHigh() {
 /* ---------------- GPIO INx helpers ---------------- */
 
 void Bts71040::setChannel(uint8_t ch, bool on) {
-    if (ch < 1 || ch > 4) return;
+    if (ch < 0 || ch > 3) return;
     HAL_GPIO_WritePin(pins_.in_port[ch-1], pins_.in_pin[ch-1], on ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
