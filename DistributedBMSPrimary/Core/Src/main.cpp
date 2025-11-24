@@ -168,6 +168,8 @@ BmsController controller;
 uint8_t usbTxBuf[128];
 
 
+// ---- pins (change to match your board) ----
+
 
 
 
@@ -218,9 +220,9 @@ int main(void)
   //UART1_Packets_Init();
   HAL_UARTEx_ReceiveToIdle_IT(&huart4, rxbuf, sizeof(rxbuf));
 
+
   // Create IMU driver
   LSM6DSO32 imu(&hi2c2, LSM6DSO32::I2C_ADDR_SA0_LOW << 1);
-
   // Initialize
   if (imu.init(LSM6DSO32::Odr::Hz_104,
 			   LSM6DSO32::AccelFs::FS_4G,
@@ -230,9 +232,8 @@ int main(void)
 	  while (1);
   }
 
+  //IMU init
   INA226 ina(&hi2c2, 0x40);
-
-
   // 2 mΩ shunt, max expected 100 A
   if (ina.init(0.002f, 100.0f) != HAL_OK) {
       // handle error (blink LED, etc.)
@@ -249,23 +250,21 @@ int main(void)
   {
 
 	  LSM6DSO32::ScaledData d;
-
 	  imu.readScaled(d);
-
 	  INA226::Measurement m;
-
 	  ina.readMeasurement(m);
 
-	uint32_t now_ms = HAL_GetTick();
+	  ADS131_TestRegisters();
 
+	  uint32_t now_ms = HAL_GetTick();
 
-	// 1) Keep fleet summary fresh (still uses your existing logic)
-	fleet.update_summary_from_modules(now_ms);
-	const auto& summary = fleet.summary();
+	  // 1) Keep fleet summary fresh (still uses your existing logic)
+	  fleet.update_summary_from_modules(now_ms);
+	  const auto& summary = fleet.summary();
 
-	if(fleet.has_data(now_ms)){
-		controller.updateFaultsFromSummary(summary);
-	}
+	  if(fleet.has_data(now_ms)){
+		  controller.updateFaultsFromSummary(summary);
+	  }
 
 
 
