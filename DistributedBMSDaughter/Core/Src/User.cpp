@@ -16,6 +16,7 @@
 #include "BMS.hpp"
 #include "CanFrame.cpp"
 #include "FaultManager.hpp"
+#include "DataValidator.hpp"
 #include "DeviceConfig.hpp"
 
 //C++ stuff
@@ -38,6 +39,7 @@ static CANDriver::CANDevice can(&hcan1);
 //Data handler Inits
 BMS bms(DeviceConfig::CELL_COUNT_CONF);
 FaultManager faultManager;
+DataValidator dataValidator;
 
 //Can Callback
 static int count = 0;
@@ -98,13 +100,15 @@ void StartDefaultTask(void *argument)
 		//Get Pack and cell voltages
 		if (bq.getVC(cellVoltages) != HAL_OK)
 		{
-			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
+			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
 		}
 		else
 		{
 			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+			if(dataValidator.validateCellVoltages(cellVoltages) == 0){
+				bms.set_cell_mV(cellVoltages);
+			}
 
-			bms.set_cell_mV(cellVoltages);
 		}
 		osMutexRelease(bmsMutex_id);
 
