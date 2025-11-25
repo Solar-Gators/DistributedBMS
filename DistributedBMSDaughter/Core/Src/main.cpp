@@ -26,23 +26,6 @@
 /* USER CODE BEGIN Includes */
 #include "User.hpp"
 
-//Lower Level Drivers
-#include "BQ7692000.hpp"
-#include "CanBus.hpp"
-#include "CanDriver.hpp"
-
-//Data handlers
-#include "BMS.hpp"
-#include "CanFrame.cpp"
-#include "FaultManager.hpp"
-#include "DeviceConfig.hpp"
-
-//C++ stuff
-#include <array>
-#include <cstring>
-#include <cstdio>
-#include <cstdint>
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,8 +35,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
-
 
 /* USER CODE END PD */
 
@@ -89,12 +70,7 @@ const osThreadAttr_t voltageMonitoring_attributes = {
   .priority = (osPriority_t) osPriorityNormal,
 };
 
-osThreadId_t temperatureMonitoringHandle;
-const osThreadAttr_t temperatureMonitoring_attributes = {
-  .name = "temperatureTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
+
 
 osMutexId_t bmsMutex_id;
 
@@ -124,14 +100,10 @@ void StartTemperatureTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
-
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-
 
 /* USER CODE END 0 */
 
@@ -175,18 +147,16 @@ int main(void)
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
 
+  //run setup from User.cpp
+  setup();
   /* USER CODE END 2 */
 
   /* Init scheduler */
   osKernelInitialize();
 
-
-
-  setup();
-
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
   voltageMonitoringHandle = osThreadNew(StartVoltageTask, NULL, &voltageMonitoring_attributes);
-  temperatureMonitoringHandle = osThreadNew(StartTemperatureTask, NULL, &temperatureMonitoring_attributes);
+
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
