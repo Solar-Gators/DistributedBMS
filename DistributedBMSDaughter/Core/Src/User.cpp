@@ -24,11 +24,10 @@
 #include <cstdio>
 #include <cstdint>
 
-
+//pull data tyes from main.cpp
 extern I2C_HandleTypeDef hi2c2;
 extern CAN_HandleTypeDef hcan1;
 extern ADC_HandleTypeDef hadc1;
-
 extern const osMutexAttr_t BMS_Mutex_attr;
 extern osMutexId_t bmsMutex_id;
 
@@ -56,14 +55,13 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 }
 
 //BQ Chip Data types
-static uint16_t packVoltage = 0;
 static std::array<uint16_t, CELL_COUNT> cellVoltages{};
 //Temp Data
-static uint16_t dieTemp = 0;
 static std::array<uint16_t, CELL_COUNT> cellTempADC{};
 
 bool debugMode;
 
+//Setup Function
 void setup(){
 
 	bmsMutex_id = osMutexNew(&BMS_Mutex_attr);
@@ -78,6 +76,7 @@ void setup(){
 void StartDefaultTask(void *argument)
 {
 
+	//Intalize BMS chip
 	HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
 
 	while (bq.init() != HAL_OK)
@@ -88,47 +87,35 @@ void StartDefaultTask(void *argument)
 
 	HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
 
+	//Initalize error flags
 	bool temp_read_success = true;
-	bool voltage_read_success = true;
+
 
 	for(;;)
 	{
 
 		osMutexAcquire(bmsMutex_id, osWaitForever);
-		if (bq.getBAT(&packVoltage) != HAL_OK)
-		{
-			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-			voltage_read_success = false;
-		}
-		else
-		{
-			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-			voltage_read_success = true;
-		}
+		//Get Pack and cell voltages
 		if (bq.getVC(cellVoltages) != HAL_OK)
 		{
 			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR, true);
-			voltage_read_success = false;
 		}
 		else
 		{
 			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-			voltage_read_success = true;
-		}
 
-		if (voltage_read_success)
-		{
 			bms.set_cell_mV(cellVoltages);
 		}
 		osMutexRelease(bmsMutex_id);
 
-
+		//read tempatures
 		TempDMAComplete = false;
 		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
 		while (!TempDMAComplete) {}
 
 		for (int i = 0; i < ADC_NUM_CONVERSIONS; i++) cellTempADC[i] = adc_buf[i];
 
+		//check tempature read success
 		if (temp_read_success) {
 			bms.set_ntc_counts(cellTempADC);
 		}
@@ -144,18 +131,20 @@ void StartDefaultTask(void *argument)
 void StartVoltageTask(void *argument)
 {
 
+	//Initalize CAN frames
 	CANDriver::CANFrame avg_msg(DeviceConfig::CAN_ID, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 	CANDriver::CANFrame highvolt_msg(DeviceConfig::CAN_ID, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 	CANDriver::CANFrame hightemp_msg(DeviceConfig::CAN_ID, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
 
 	for (;;)
 	{
-
+		//Update BMS Values
 		osMutexAcquire(bmsMutex_id, osWaitForever);
 		bms.update();
 		auto& r = bms.results();
 		osMutexRelease(bmsMutex_id);
 
+		//Send CAN frames
 		auto data1 = CanFrames::make_average_stats(r);
 		avg_msg.LoadData(data1.bytes.data(), 8);
 		can.Send(&avg_msg);
@@ -172,5 +161,3 @@ void StartVoltageTask(void *argument)
 
 	}
 }
-
-
