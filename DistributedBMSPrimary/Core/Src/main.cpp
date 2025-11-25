@@ -254,7 +254,7 @@ int main(void)
 	  INA226::Measurement m;
 	  ina.readMeasurement(m);
 
-	  ADS131_TestRegisters();
+
 
 	  uint32_t now_ms = HAL_GetTick();
 
