@@ -15,13 +15,12 @@
  class FaultManager {
  public:
     enum class FaultType : uint8_t {
-        NONE = 0,
-        BQ76920_COMM_ERROR = 1,
-		BQ76920_RESULT_ERROR = 2,
-        ADC_READ_ERROR = 3,
-		ADC_RESULT_ERROR = 4,
-        CAN_TRANSMIT_ERROR = 5,
-        CAN_RECEIVE_ERROR = 6
+        BQ76920_COMM_ERROR = 0,
+		BQ76920_RESULT_ERROR = 1,
+		ADC_RESULT_ERROR = 2,
+        CAN_TRANSMIT_ERROR = 3,
+
+
     };
  
 

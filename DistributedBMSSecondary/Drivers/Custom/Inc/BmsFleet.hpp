@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <array>
 #include "CanFrames.hpp"
-#include "CanBus.hpp"
 #include "CanDriver.hpp"
 
 namespace BmsFleetCfg {

@@ -4,7 +4,7 @@
  *  Created on: Aug 22, 2025
  *      Author: samrb
  */
-# define ADC_NUM_CONVERSIONS 5
+# define CELLS 5
 
 #include "User.hpp"
 
@@ -49,17 +49,17 @@ HAL_StatusTypeDef allCallback(const CANDriver::CANFrame& msg, void* ctx){
 }
 
 //ADC DMA stuff
-bool TempDMAComplete;
-volatile uint16_t adc_buf[ADC_NUM_CONVERSIONS];
+volatile bool TempDMAComplete;
+volatile uint16_t adc_buf[CELLS];
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	//move data between buffer arrays
 	TempDMAComplete = true;
 }
 
 //BQ Chip Data types
-static std::array<uint16_t, CELL_COUNT> cellVoltages{};
+static std::array<uint16_t, CELLS> cellVoltages{};
 //Temp Data
-static std::array<uint16_t, CELL_COUNT> cellTempADC{};
+static std::array<uint16_t, CELLS> cellTempADC{};
 
 bool debugMode;
 
@@ -74,24 +74,29 @@ void setup(){
 
 }
 
-//Get Data
+//Collect voltage and temperature data (ignore task name)
 void StartDefaultTask(void *argument)
 {
 
 	//Intalize BMS chip
 	HAL_GPIO_WritePin(TS1_GPIO_Port, TS1_Pin, GPIO_PIN_SET);
 
-	while (bq.init() != HAL_OK)
-	{
-		// Error handling
-		HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
+	int retries = 0;
+	const int MAX_RETRIES = 5;
+
+	while (bq.init() != HAL_OK && retries < MAX_RETRIES) {
+	    retries++;
+	    faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+	    HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_SET);
+	    osDelay(100); // or HAL_Delay if before scheduler
 	}
 
-	HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
-
-	//Initalize error flags
-	bool temp_read_success = true;
-
+	if (retries == MAX_RETRIES) {
+	    // hard fault state? maybe stay here or signal via CAN
+	} else {
+		faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+	    HAL_GPIO_WritePin(GPIOB, Fault_Pin, GPIO_PIN_RESET);
+	}
 
 	for(;;)
 	{
@@ -107,6 +112,9 @@ void StartDefaultTask(void *argument)
 			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
 			if(dataValidator.validateCellVoltages(cellVoltages) == 0){
 				bms.set_cell_mV(cellVoltages);
+				faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
+			}else{
+				faultManager.setFault(FaultManager::FaultType::BQ76920_RESULT_ERROR);
 			}
 
 		}
@@ -114,14 +122,16 @@ void StartDefaultTask(void *argument)
 
 		//read tempatures
 		TempDMAComplete = false;
-		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_NUM_CONVERSIONS);
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, CELLS);
 		while (!TempDMAComplete) {}
 
-		for (int i = 0; i < ADC_NUM_CONVERSIONS; i++) cellTempADC[i] = adc_buf[i];
+		for (int i = 0; i < CELLS; i++) cellTempADC[i] = adc_buf[i];
 
-		//check tempature read success
-		if (temp_read_success) {
+		if(dataValidator.validateADCReadings(cellTempADC) == 0){
 			bms.set_ntc_counts(cellTempADC);
+			faultManager.clearFault(FaultManager::FaultType::ADC_RESULT_ERROR);
+		}else{
+			faultManager.setFault(FaultManager::FaultType::ADC_RESULT_ERROR);
 		}
 
 		osDelay(DeviceConfig::CYCLE_TIME_MS);
@@ -131,7 +141,7 @@ void StartDefaultTask(void *argument)
 }
 
 
-//Send Data
+//Send Data over CAN (ignore task name)
 void StartVoltageTask(void *argument)
 {
 
@@ -151,17 +161,34 @@ void StartVoltageTask(void *argument)
 		//Send CAN frames
 		auto data1 = CanFrames::make_average_stats(r);
 		avg_msg.LoadData(data1.bytes.data(), 8);
-		can.Send(&avg_msg);
 
 		auto data2 = CanFrames::make_voltage_extremes(r);
 		highvolt_msg.LoadData(data2.bytes.data(), 8);
-		can.Send(&highvolt_msg);
 
 		auto data3 = CanFrames::make_high_temp(r);
 		hightemp_msg.LoadData(data3.bytes.data(), 8);
-		can.Send(&hightemp_msg);
 
-		osDelay(DeviceConfig::CYCLE_TIME_MS);
+        bool allSuccessful = true;   // Track success for this cycle
+
+        // ---- EXAMPLE TRANSMISSIONS ----
+        if (can.Send(&avg_msg) != HAL_OK) {
+            allSuccessful = false;
+        }
+        if (can.Send(&highvolt_msg) != HAL_OK) {
+            allSuccessful = false;
+        }
+        if (can.Send(&hightemp_msg) != HAL_OK) {
+            allSuccessful = false;
+        }
+
+        // Set or clear CAN fault based on the entire cycle:
+        if (!allSuccessful) {
+            faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+        } else {
+            faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+        }
+
+        osDelay(DeviceConfig::CYCLE_TIME_MS);
 
 	}
 }

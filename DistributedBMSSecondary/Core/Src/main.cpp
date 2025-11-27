@@ -22,6 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "User.hpp"
 
 #include "CanDriver.hpp"
 #include "BmsFleet.hpp"
@@ -35,9 +36,6 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#define SOF0 0xA5
-#define SOF1 0x5A
-
 
 /* USER CODE END PTD */
 
@@ -73,23 +71,7 @@ void StartDefaultTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
-extern CAN_HandleTypeDef hcan1;
-//static CanBus can(hcan1);
-static CANDriver::CANDevice can(&hcan1);
 
-static BmsFleet fleet;
-
-HAL_StatusTypeDef allCallback(const CANDriver::CANFrame& msg, void* ctx){
-	HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
-	fleet.handle(msg, HAL_GetTick());
-	return HAL_OK;
-}
-
-HAL_StatusTypeDef daughterOneCallback(const CANDriver::CANFrame& msg, void* ctx){
-	HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
-	fleet.handle(msg, HAL_GetTick());
-	return HAL_OK;
-}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -144,6 +126,7 @@ int main(void)
 
 
 	/* USER CODE BEGIN 2 */
+	setup();
 
 	osKernelInitialize();
 
@@ -162,18 +145,7 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
-	can.AddFilterRange(0x101, 4, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
-	can.addCallbackRange(0x101, 4, SG_CAN_ID_STD, daughterOneCallback, NULL);
-	can.AddFilterId(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
-	can.addCallbackId(0x101, SG_CAN_ID_STD, daughterOneCallback, NULL);
 
-	// Add Daughters 2-6 here
-
-	can.addCallbackAll(allCallback);
-	fleet.register_node(0x101, 0);
-
-
-	can.StartCANDevice();
   /* Create the thread(s) */
   /* creation of defaultTask */
     defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
@@ -197,14 +169,6 @@ int main(void)
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-
-//		CanBus::Frame rx;
-//		if (can.read(rx)) {
-//			fleet.handle(rx, HAL_GetTick());
-//			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
-//			can.sendStd(0x21, {0x67,67}, 2);
-//		}
-
 
 
     /* USER CODE END WHILE */
@@ -359,97 +323,6 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
-/* USER CODE BEGIN Header_StartDefaultTask */
-/**
-  * @brief  Function implementing the defaultTask thread.
-  * @param  argument: Not used
-  * @retval None
-  */
-/* USER CODE END Header_StartDefaultTask */
-static volatile uint32_t g_lastHeartbeatInterval = 0;
-
-void StartDefaultTask(void *argument)
-{
-  /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-
-	uint8_t txbuf[64];  // Buffer for encoded frame (SOF + LEN + payload + CRC)
-	static uint8_t module_cursor = 0;
-	static uint32_t last_heartbeat_ms = 0;
-	static uint32_t heartbeat_counter = 0;
-	static uint8_t frame_rotation = 0;  // 0=fleet, 1=module, 2=heartbeat
-	uint32_t now = 0;
-
-	for(;;)
-	{
-		now = osKernelGetTickCount();
-
-		if (last_heartbeat_ms == 0U) {
-			last_heartbeat_ms = now;
-		}
-
-		bool have_data = false;
-		for (uint8_t i = 0; i < BmsFleetCfg::MAX_MODULES; ++i) {
-			if (fleet.has_any_data(i)) {
-				have_data = true;
-				break;
-			}
-		}
-
-		// Rotate between frame types to avoid overwhelming the receiver
-		switch (frame_rotation) {
-
-
-		case 0:  // Module summary
-			if (have_data) {
-				for (uint8_t attempts = 0; attempts < BmsFleetCfg::MAX_MODULES; ++attempts) {
-					uint8_t idx = module_cursor;
-					module_cursor = (uint8_t)((module_cursor + 1) % BmsFleetCfg::MAX_MODULES);
-					if (!fleet.has_any_data(idx)) {
-						continue;
-					}
-
-					size_t mod_len = uart_make_module_summary(fleet, idx, now, txbuf, sizeof(txbuf));
-					if (mod_len > 0) {
-						HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, mod_len, 1000);
-						if (status != HAL_OK) {
-							// TODO: handle transmission error
-						} else {
-							// Give receiver time to process frame
-							osDelay(50);
-						}
-						break;
-					}
-				}
-			}
-			frame_rotation = 1;
-			break;
-
-		case 1:  // Heartbeat
-			if ((now - last_heartbeat_ms) >= 1000U) {
-				uint32_t interval = now - last_heartbeat_ms;
-				g_lastHeartbeatInterval = interval;
-				HAL_GPIO_TogglePin(GPIOB, ERROR_Pin);
-				size_t hb_len = uart_make_heartbeat(heartbeat_counter++, txbuf, sizeof(txbuf));
-				if (hb_len > 0) {
-					HAL_StatusTypeDef status = HAL_UART_Transmit(&huart2, txbuf, hb_len, 1000);
-					if (status != HAL_OK) {
-						// TODO: handle transmission error
-					} else {
-						// Give receiver time to process frame
-						osDelay(50);
-					}
-				}
-				last_heartbeat_ms = now;
-			}
-			frame_rotation = 0;
-			break;
-		}
-
-		osDelay(250);
-	}
-  /* USER CODE END 5 */
-}
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
