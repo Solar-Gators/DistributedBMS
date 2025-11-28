@@ -30,6 +30,7 @@ inline Frame8 make_voltage_extremes(const BMS::Results& r) {
     f.bytes[4] = r.low_cell_mV >> 8;
     f.bytes[5] = r.low_cell_phys_idx;
     f.bytes[6] = r.high_cell_phys_idx;
+    f.bytes[7] = r.faults;
     return f;
 }
 

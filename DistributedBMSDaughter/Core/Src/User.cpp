@@ -134,6 +134,8 @@ void StartDefaultTask(void *argument)
 			faultManager.setFault(FaultManager::FaultType::ADC_RESULT_ERROR);
 		}
 
+		bms.setFaults(faultManager.getFaultMask());
+
 		osDelay(DeviceConfig::CYCLE_TIME_MS);
 
   }

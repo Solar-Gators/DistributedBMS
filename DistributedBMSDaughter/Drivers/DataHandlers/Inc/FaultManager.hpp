@@ -41,7 +41,7 @@
  
 private:
 
-     uint32_t fault_mask_;
+     uint8_t fault_mask_;
 
 
  };

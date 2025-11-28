@@ -44,7 +44,8 @@ public:
         float high_C = -1000.0f;
         uint8_t high_temp_idx = 0;
 
-        uint8_t num_cells = 3;
+        uint8_t num_cells = 0;
+        uint8_t faults = 0;
     };
 
     explicit BMS(uint8_t num_cells = 4, ThermParams tp = ThermParams{});
@@ -56,6 +57,8 @@ public:
     void set_cell_mV(const std::array<uint16_t,5>& mV);
     void set_ntc_volts(const std::array<float,5>& v);
     void set_ntc_counts(const std::array<uint16_t,5>& counts);
+
+    void setFaults(uint8_t faults);
 
     void update();
     const Results& results() const;
@@ -74,6 +77,7 @@ public:
 private:
     ThermParams tp_;
     uint8_t num_cells_ = 4;
+    uint8_t faults_ = 0;
     std::array<uint8_t,5> cell_phys_map_{{0,1,2,4,255}};
     std::array<bool,5> temp_use_{{true,true,true,true,true}};
     std::array<uint16_t,5> cell_mV_{};
@@ -85,6 +89,7 @@ private:
     void compute_cell_stats();
     void compute_temps();
     float ntc_to_C(float v_out) const;
+
 };
 
 

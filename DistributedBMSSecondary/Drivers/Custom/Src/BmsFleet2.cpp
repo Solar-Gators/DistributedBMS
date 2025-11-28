@@ -44,7 +44,31 @@ bool BmsFleet::register_node(uint16_t can_id, uint8_t index){
 	return false;
 }
 
+ModuleData& BmsFleet::module(uint8_t id){
+	return modules_[id];
+}
+
 void BmsFleet::handleMessage(const CANDriver::CANFrame& msg, uint32_t now_ms){
-	int moduleIndex = (uint16_t)msg.can_id = 0x100;
+	int moduleIndex = (uint16_t)msg.can_id - 0x100;
+	if(moduleIndex < 0) return;
+
+	ModuleData& M = modules_[moduleIndex];
+	if(msg.len < 1) return;
+
+	const uint8_t* data = msg.data;
+
+	switch (CanFrames::getType(data)){
+	case CanFrames::AVERAGES: {
+		float avgTemp; uint16_t avgVoltage; uint8_t numCells; uint8_t faults;
+		if (CanFrames::decodeAverages(data, avgTemp, avgVoltage, numCells)){
+
+		}
+
+	}break;
+
+	default:
+		break;
+	}
+
 
 }

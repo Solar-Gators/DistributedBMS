@@ -44,9 +44,14 @@ void BMS::set_ntc_counts(const std::array<uint16_t,5>& counts) {
     have_ntc_volts_ = true;
 }
 
+void BMS::setFaults(uint8_t faults){
+	faults_ = faults;
+}
+
 void BMS::update() {
     compute_cell_stats();
     compute_temps();
+    res_.faults = faults_;
 }
 
 const BMS::Results& BMS::results() const { return res_; }
