@@ -5,10 +5,15 @@
 // ModuleData helpers
 // -------------------------------------------------------------
 void ModuleData::clear() {
-    high_C = -1000.f; high_temp_idx = 0;
-    high_mV = low_mV = 0; low_idx = high_idx = 0;
-    avg_C = 0.f; avg_cell_mV = 0; num_cells = 0;
-    last_ms = 0; got_type0 = got_type1 = got_type2 = false;
+    high_C = -1000.f;
+    high_temp_idx = 0;
+    high_mV = low_mV = 0;
+    low_idx = high_idx = 0;
+    avg_C = 0.f;
+    avg_cell_mV = 0;
+    num_cells = 0;
+    last_ms = 0;
+    got_type0 = got_type1 = got_type2 = false;
 }
 
 bool ModuleData::online(uint32_t now_ms, uint32_t stale_ms) const {

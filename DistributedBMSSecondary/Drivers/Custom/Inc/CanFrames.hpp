@@ -11,6 +11,8 @@
 #pragma once
 #include <cstdint>
 #include <array>
+#include "CanFrames.hpp"
+#include "CanDriver.hpp"
 
 namespace CanFrames {
 

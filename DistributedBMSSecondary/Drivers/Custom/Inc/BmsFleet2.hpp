@@ -1,0 +1,58 @@
+/*
+ * BmsFleet2.hpp
+ *
+ *  Created on: Nov 26, 2025
+ *      Author: samrb
+ */
+
+#ifndef CUSTOM_INC_BMSFLEET2_HPP_
+#define CUSTOM_INC_BMSFLEET2_HPP_
+
+#define MAX_MODULES 8
+#define STALE_MS 1500
+
+#pragma once
+#include <cstdint>
+#include <array>
+#include "CanFrames.hpp"
+#include "CanDriver.hpp"
+
+struct ModuleData {
+	float highTemp = -1000;
+	float avgTemp = 0;
+	uint8_t highTempID = 0;
+
+	uint16_t highVoltage = 0, lowVoltage = 0;
+	uint8_t lowVoltageID = 0, highVoltageID = 0;
+	float avgVoltage = 0;
+
+	uint8_t num_cells = 0;
+	uint32_t last_ms = 0;
+
+	void clear();
+	bool online(uint32_t now_ms, uint32_t stale_ms = STALE_MS);
+
+};
+struct IdMapElement {
+	uint16_t can_id = 0;
+	uint8_t index = 0;
+	bool used = false;
+};
+
+class BmsFleet {
+public:
+	BmsFleet();
+
+	bool registerDaughter(uint16_t can_id, uint8_t index);
+	void handleMessage(const CANDriver::CANFrame& msg, uint32_t now_ms);
+
+	ModuleData& module(uint8_t id);
+
+private:
+	std::array<ModuleData, MAX_MODULES> modules_;
+	std::array<IdMapElement, MAX_MODULES> idmap_;
+
+};
+
+
+#endif /* CUSTOM_INC_BMSFLEET2_HPP_ */
