@@ -15,6 +15,7 @@
 //Data handlers
 #include "BMS.hpp"
 #include "CanFrame.cpp"
+#include "CanBus.hpp"
 #include "FaultManager.hpp"
 #include "DataValidator.hpp"
 #include "DeviceConfig.hpp"
@@ -25,16 +26,12 @@
 #include <cstdio>
 #include <cstdint>
 
-//pull data tyes from main.cpp
-extern I2C_HandleTypeDef hi2c2;
-extern CAN_HandleTypeDef hcan1;
-extern ADC_HandleTypeDef hadc1;
-extern const osMutexAttr_t BMS_Mutex_attr;
-extern osMutexId_t bmsMutex_id;
+
 
 //hardware intialization
 BQ7692000PW bq(&hi2c2);
-static CANDriver::CANDevice can(&hcan1);
+static CanBus can(hcan1);
+//CANDriver::CANDevice can(&hcan1);
 
 //Data handler Inits
 BMS bms(DeviceConfig::CELL_COUNT_CONF);
@@ -67,8 +64,11 @@ bool debugMode;
 void setup(){
 
 	bmsMutex_id = osMutexNew(&BMS_Mutex_attr);
-	can.addCallbackAll(allCallback);
-	can.StartCANDevice();
+	//can.addCallbackAll(allCallback);
+	//can.StartCANDevice();
+	//CAN Config
+	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
+	can.start();
 
 	debugMode = true;
 
@@ -162,17 +162,18 @@ void StartVoltageTask(void *argument)
 
 		//Send CAN frames
 		auto data1 = CanFrames::make_average_stats(r);
-		avg_msg.LoadData(data1.bytes.data(), 8);
+		//avg_msg.LoadData(data1.bytes.data(), 8);
 
 		auto data2 = CanFrames::make_voltage_extremes(r);
-		highvolt_msg.LoadData(data2.bytes.data(), 8);
+		//highvolt_msg.LoadData(data2.bytes.data(), 8);
 
 		auto data3 = CanFrames::make_high_temp(r);
-		hightemp_msg.LoadData(data3.bytes.data(), 8);
+		//hightemp_msg.LoadData(data3.bytes.data(), 8);
 
         bool allSuccessful = true;   // Track success for this cycle
 
         // ---- EXAMPLE TRANSMISSIONS ----
+        /*
         if (can.Send(&avg_msg) != HAL_OK) {
             allSuccessful = false;
         }
@@ -182,12 +183,21 @@ void StartVoltageTask(void *argument)
         if (can.Send(&hightemp_msg) != HAL_OK) {
             allSuccessful = false;
         }
+		*/
+	    // Transmit
+	    can.sendStd(0x101, data1.bytes, data1.dlc);
+	    can.sendStd(0x101, data2.bytes, data2.dlc);
+	    can.sendStd(0x101, data3.bytes, data3.dlc);
 
         // Set or clear CAN fault based on the entire cycle:
         if (!allSuccessful) {
             faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
         } else {
             faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+        }
+
+        if(faultManager.getFaultMask() == 0){
+        	HAL_GPIO_TogglePin(GPIOB, OK_Pin);
         }
 
         osDelay(DeviceConfig::CYCLE_TIME_MS);

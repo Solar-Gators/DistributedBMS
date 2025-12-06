@@ -148,11 +148,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   //run setup from User.cpp
-  setup();
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
   osKernelInitialize();
+
+  setup();
 
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
   voltageMonitoringHandle = osThreadNew(StartVoltageTask, NULL, &voltageMonitoring_attributes);

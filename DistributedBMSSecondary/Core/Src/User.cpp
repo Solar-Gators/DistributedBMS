@@ -6,19 +6,24 @@
  */
 #include "User.hpp"
 
-#include "CanDriver.hpp"
+//#include "CanDriver.hpp"
+#include "CanBus.hpp"
+
 #include "BmsFleet.hpp"
-#include "UartFleetPack.hpp"
+//include "UartFleetPack.hpp"
 
 #include <stdint.h>
 #include <stddef.h>
 
 extern CAN_HandleTypeDef hcan1;
 extern UART_HandleTypeDef huart2;
-static CANDriver::CANDevice can(&hcan1);
+
+//static CANDriver::CANDevice can(&hcan1);
+static CanBus can(hcan1);
 
 static BmsFleet fleet;
 
+/*
 HAL_StatusTypeDef allCallback(const CANDriver::CANFrame& msg, void* ctx){
 	HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
 	fleet.handle(msg, HAL_GetTick());
@@ -30,21 +35,32 @@ HAL_StatusTypeDef daughterOneCallback(const CANDriver::CANFrame& msg, void* ctx)
 	fleet.handle(msg, HAL_GetTick());
 	return HAL_OK;
 }
+*/
+
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+    if (auto* cb = CanBus::isr_instance()) {
+        cb->onRxFifo0Pending();
+    }
+}
 
 //Setup Function
 void setup(){
-	can.AddFilterRange(0x101, 4, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
-	can.addCallbackRange(0x101, 4, SG_CAN_ID_STD, daughterOneCallback, NULL);
-	can.AddFilterId(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
-	can.addCallbackId(0x101, SG_CAN_ID_STD, daughterOneCallback, NULL);
+	//can.AddFilterRange(0x101, 4, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
+	//can.addCallbackRange(0x101, 4, SG_CAN_ID_STD, daughterOneCallback, NULL);
+	//can.AddFilterId(0x101, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 0);
+	//can.addCallbackId(0x101, SG_CAN_ID_STD, daughterOneCallback, NULL);
 
 	// Add Daughters 2-6 here
 
-	can.addCallbackAll(allCallback);
-	fleet.register_node(0x101, 0);
+	//can.addCallbackAll(allCallback);
+	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
+	can.start();
+
+	//fleet.register_node(0x101, 0);
 
 
-	can.StartCANDevice();
+	//can.StartCANDevice();
 }
 
 
@@ -56,11 +72,11 @@ void StartDefaultTask(void *argument)
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
 
-	uint8_t txbuf[64];  // Buffer for encoded frame (SOF + LEN + payload + CRC)
-	static uint8_t module_cursor = 0;
+	//uint8_t txbuf[64];  // Buffer for encoded frame (SOF + LEN + payload + CRC)
+	//static uint8_t module_cursor = 0;
 	static uint32_t last_heartbeat_ms = 0;
-	static uint32_t heartbeat_counter = 0;
-	static uint8_t frame_rotation = 0;  // 0=fleet, 1=module, 2=heartbeat
+	//tatic uint32_t heartbeat_counter = 0;
+	//static uint8_t frame_rotation = 0;  // 0=fleet, 1=module, 2=heartbeat
 	uint32_t now = 0;
 
 	for(;;)
@@ -70,7 +86,7 @@ void StartDefaultTask(void *argument)
 		if (last_heartbeat_ms == 0U) {
 			last_heartbeat_ms = now;
 		}
-
+		/*
 		bool have_data = false;
 		for (uint8_t i = 0; i < BmsFleetCfg::MAX_MODULES; ++i) {
 			if (fleet.has_any_data(i)) {
@@ -128,8 +144,19 @@ void StartDefaultTask(void *argument)
 			frame_rotation = 0;
 			break;
 		}
-
+		*/
 		osDelay(250);
 	}
   /* USER CODE END 5 */
+}
+
+void StartCanTask(void *argument){
+
+	while(1){
+		CanBus::Frame rx;
+		if (can.read(rx)) {
+			//fleet.handle(rx, HAL_GetTick());
+			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
+		}
+	}
 }

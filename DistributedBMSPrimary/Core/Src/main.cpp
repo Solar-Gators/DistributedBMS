@@ -170,6 +170,72 @@ uint8_t usbTxBuf[128];
 
 // ---- pins (change to match your board) ----
 
+static void spi_cmd24(uint32_t cmd, uint8_t *rx3)
+{
+    uint8_t tx[3];
+
+
+	    tx[2] = 0x00;
+	    tx[1] = 0x11;
+	    tx[0] = 0x00;          // LSB
+
+
+    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_RESET);
+    HAL_SPI_TransmitReceive(&hspi1, tx, rx3, 3, 1000);
+    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_SET);
+}
+
+static uint32_t rreg_cmd(uint8_t addr)
+{
+    uint16_t op = (0b101 << 13) | ((addr & 0x7F) << 6) | 0x00; // RREG, 1 reg
+    return ((uint32_t)op << 8);   // pad to 24 bits
+}
+
+uint16_t ADS131_ReadReg(uint8_t addr)
+{
+    uint8_t rx3[3];
+
+    uint32_t cmd = rreg_cmd(addr);
+
+    spi_cmd24(cmd, rx3);        // send RREG
+    spi_cmd24(0x000000, rx3);   // NULL → clocks response
+
+    uint16_t reg16 = ((uint16_t)rx3[0] << 8) | rx3[1];
+    return reg16;
+}
+
+void ADS131_SendRecv24_fast(uint32_t cmd, uint8_t rx[3])
+{
+    uint8_t b0 = (cmd >> 16) & 0xFF;
+    uint8_t b1 = (cmd >> 8)  & 0xFF;
+    uint8_t b2 = cmd & 0xFF;
+
+    // Pull CS low
+    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_RESET);
+
+    // ---- BYTE 0 ----
+    SPI1->DR = b0;
+    while (!(SPI1->SR & SPI_SR_RXNE));   // wait for RX
+    rx[0] = SPI1->DR;                    // read byte
+
+    // ---- BYTE 1 ----
+    SPI1->DR = b1;
+    while (!(SPI1->SR & SPI_SR_RXNE));
+    rx[1] = SPI1->DR;
+
+    // ---- BYTE 2 ----
+    SPI1->DR = b2;
+    while (!(SPI1->SR & SPI_SR_RXNE));
+    rx[2] = SPI1->DR;
+
+    // wait for bus idle (ensures final clock has finished)
+    while (SPI1->SR & SPI_SR_BSY);
+
+    // CS high
+    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_SET);
+}
+
+
 
 
 
@@ -253,6 +319,13 @@ int main(void)
 	  imu.readScaled(d);
 	  INA226::Measurement m;
 	  ina.readMeasurement(m);
+
+	  uint8_t rx[3];
+
+
+
+	  ADS131_SendRecv24_fast(0x001100, rx);
+
 
 
 
@@ -509,9 +582,9 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
@@ -519,7 +592,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 7;
   hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
