@@ -16,7 +16,7 @@ namespace DeviceConfig {
     // ===================
     // Change this number to set the device ID for this daughter board
     // CAN ID will be automatically calculated as: BASE_CAN_ID + DEVICE_NUMBER
-    static constexpr uint8_t DEVICE_NUMBER = 1;  // Change this: 1, 2, 3, 4, 5, 6, 7, 8
+    static constexpr uint8_t DEVICE_NUMBER = 0;  // Change this: 1, 2, 3, 4, 5, 6, 7, 8
     
     // CAN ID Configuration
     // ===================
@@ -27,7 +27,7 @@ namespace DeviceConfig {
     static constexpr uint16_t CAN_ID = BASE_CAN_ID + DEVICE_NUMBER;
     
     // Validation
-    static_assert(DEVICE_NUMBER >= 1 && DEVICE_NUMBER <= MAX_DEVICES, 
+    static_assert(DEVICE_NUMBER >= 0 && DEVICE_NUMBER < MAX_DEVICES,
                   "DEVICE_NUMBER must be between 1 and 8");
     static_assert(CAN_ID <= 0x7FF, 
                   "Calculated CAN ID exceeds 11-bit limit");

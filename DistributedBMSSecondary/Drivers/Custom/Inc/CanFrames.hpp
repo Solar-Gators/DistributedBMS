@@ -39,7 +39,7 @@ Frame encodeAverages(float avgTemp, uint16_t avgVoltage, uint8_t numCells);
 uint8_t getType(const uint8_t* data);
 bool decodeHighTemp(const uint8_t* data, float& temp, uint8_t& idx);
 bool decodeVoltageExtremes(const uint8_t* data, uint16_t& highV,
-                           uint16_t& lowV, uint8_t& lowIdx, uint8_t& highIdx);
+                           uint16_t& lowV, uint8_t& lowIdx, uint8_t& highIdx, uint8_t& faults);
 bool decodeAverages(const uint8_t* data, float& avgTemp,
                     uint16_t& avgVoltage, uint8_t& numCells);
 

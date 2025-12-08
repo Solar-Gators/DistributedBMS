@@ -48,12 +48,13 @@ bool decodeHighTemp(const uint8_t* data, float& temp, uint8_t& idx) {
 }
 
 bool decodeVoltageExtremes(const uint8_t* data, uint16_t& highV,
-                           uint16_t& lowV, uint8_t& lowIdx, uint8_t& highIdx) {
+                           uint16_t& lowV, uint8_t& lowIdx, uint8_t& highIdx, uint8_t& faults) {
     if (data[0] != VOLTAGE_EXTREMES) return false;
     highV = (data[2] << 8) | data[1];
     lowV  = (data[4] << 8) | data[3];
     lowIdx = data[5];
     highIdx = data[6];
+    faults = data[7];
     return true;
 }
 

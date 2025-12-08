@@ -5,6 +5,10 @@
  *      Author: samrb
  */
 #include <BmsFleet.hpp>
+#include <cstring>
+#include "cmsis_os.h"
+
+#define stale 500
 
 void ModuleData::clear() {
 	highTemp = -1000;
@@ -18,9 +22,7 @@ void ModuleData::clear() {
 
 }
 
-bool ModuleData::online(uint32_t now_ms, uint32_t stale_ms){
-    return (now_ms - last_ms) <= stale_ms;
-}
+
 
 
 BmsFleet::BmsFleet(){
@@ -30,6 +32,20 @@ BmsFleet::BmsFleet(){
 	for(auto& e : idmap_){
 		e = {};
 	}
+}
+
+void BmsFleet::online(uint32_t now_ms){
+	for(auto& m : modules_){
+		if(now_ms - m.last_ms > stale){
+			m.online = false;
+		}
+	}
+
+}
+
+bool BmsFleet::isOnline(uint8_t index){
+	auto& m = modules_[index];
+	return(m.online);
 }
 
 bool BmsFleet::registerDaughter(uint16_t can_id, uint8_t index){
@@ -54,12 +70,13 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms){
 
 	ModuleData& M = modules_[moduleIndex];
 
+	M.last_ms = osKernelGetTickCount();
 
 	const uint8_t* data = msg.data;
 
 	switch (CanFrames::getType(data)){
 	case CanFrames::AVERAGES: {
-		float avgTemp; uint16_t avgVoltage; uint8_t numCells; uint8_t faults;
+		float avgTemp; uint16_t avgVoltage; uint8_t numCells;
 		if (CanFrames::decodeAverages(data, avgTemp, avgVoltage, numCells)){
 
 			M.avgTemp = avgTemp;
@@ -74,14 +91,25 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms){
 	case CanFrames::VOLTAGE_EXTREMES: {
 		uint16_t highVoltage, lowVoltage;
 		uint8_t highIndex, lowIndex;
-		if (CanFrames::decodeVoltageExtremes(data, highVoltage, lowVoltage, lowIndex, highIndex)) {
+		uint8_t faults;
+		if (CanFrames::decodeVoltageExtremes(data, highVoltage, lowVoltage, lowIndex, highIndex, faults)) {
 			M.highVoltage = highVoltage;
 			M.lowVoltage = lowVoltage;
 			M.lowVoltageID = lowIndex;
 			M.highVoltageID = highIndex;
+			M.faults = faults;
 			M.last_ms = now_ms;
 		}
-	}
+	}break;
+
+	case CanFrames::HIGH_TEMP: {
+		float highTemp; uint8_t highIndex;
+		if(CanFrames::decodeHighTemp(data, highTemp, highIndex)){
+			M.highTemp = highTemp;
+			M.highTempID = highIndex;
+			M.last_ms = now_ms;
+		}
+	}break;
 
 	default:
 		break;
@@ -89,4 +117,89 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms){
 
 
 }
+
+void BmsFleet::processModules() {
+    FleetData fleet{};
+    fleet.totalVoltage   = 0;
+    fleet.highestVoltage = 0;
+    fleet.lowestvoltage  = 0xFFFF;      // initialize high so first real value replaces it
+    fleet.highestTemp    = -1000;
+
+    uint8_t cellOffset = 0;             // used to compute global cell indexes
+
+    uint32_t now_ms = osKernelGetTickCount();    // Or whatever timestamp you prefer
+    online(now_ms);
+
+    for (size_t i = 0; i < modules_.size(); i++) {
+        auto& m = modules_[i];
+
+        // Skip stale/offline modules
+        if (m.online)
+        {
+            cellOffset += m.num_cells;  // still advance offset so indexing stays consistent
+            continue;
+        }
+
+        // 1. Total pack voltage
+        fleet.totalVoltage += m.avgVoltage * m.num_cells;
+
+        // 2. Highest cell voltage in pack
+        if (m.highVoltage > fleet.highestVoltage) {
+            fleet.highestVoltage = m.highVoltage;
+            fleet.highVoltageID  = cellOffset + m.highVoltageID;
+        }
+
+        // 3. Lowest cell voltage in pack
+        if (m.lowVoltage < fleet.lowestvoltage) {
+            fleet.lowestvoltage = m.lowVoltage;
+            fleet.lowVoltageID  = cellOffset + m.lowVoltageID;
+        }
+
+        // 4. Highest temperature in pack
+        if (m.highTemp > fleet.highestTemp) {
+            fleet.highestTemp = m.highTemp;
+            fleet.highTempID  = cellOffset + m.highTempID;
+        }
+
+        // increase global cell offset for next module
+        cellOffset += m.num_cells;
+    }
+
+    fleet_ = fleet;
+}
+
+
+
+size_t BmsFleet::packFleetData(uint8_t* out) const
+{
+    size_t offset = 0;
+    const FleetData& f = fleet_;
+
+    memcpy(out + offset, &f.totalVoltage, sizeof(f.totalVoltage));
+    offset += sizeof(f.totalVoltage);
+
+    memcpy(out + offset, &f.highestVoltage, sizeof(f.highestVoltage));
+    offset += sizeof(f.highestVoltage);
+
+    memcpy(out + offset, &f.lowestvoltage, sizeof(f.lowestvoltage));
+    offset += sizeof(f.lowestvoltage);
+
+    memcpy(out + offset, &f.highestTemp, sizeof(f.highestTemp));
+    offset += sizeof(f.highestTemp);
+
+    memcpy(out + offset, &f.highVoltageID, sizeof(f.highVoltageID));
+    offset += sizeof(f.highVoltageID);
+
+    memcpy(out + offset, &f.lowVoltageID, sizeof(f.lowVoltageID));
+    offset += sizeof(f.lowVoltageID);
+
+    memcpy(out + offset, &f.highTempID, sizeof(f.highTempID));
+    offset += sizeof(f.highTempID);
+
+    out[offset++] = '\r';
+    out[offset++] = '\n';
+
+    return offset; // = 13 bytes
+}
+
 

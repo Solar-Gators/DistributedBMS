@@ -134,11 +134,11 @@ int main(void)
 
 
 	/* USER CODE BEGIN 2 */
-
+	setup();
 
 	osKernelInitialize();
 
-	setup();
+
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */

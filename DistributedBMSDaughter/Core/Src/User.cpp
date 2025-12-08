@@ -67,7 +67,7 @@ void setup(){
 	//can.addCallbackAll(allCallback);
 	//can.StartCANDevice();
 	//CAN Config
-	can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
+	//can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
 	can.start();
 
 	debugMode = true;
@@ -148,9 +148,7 @@ void StartVoltageTask(void *argument)
 {
 
 	//Initalize CAN frames
-	CANDriver::CANFrame avg_msg(DeviceConfig::CAN_ID, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
-	CANDriver::CANFrame highvolt_msg(DeviceConfig::CAN_ID, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
-	CANDriver::CANFrame hightemp_msg(DeviceConfig::CAN_ID, SG_CAN_ID_STD, SG_CAN_RTR_DATA, 8);
+
 
 	for (;;)
 	{
@@ -162,32 +160,27 @@ void StartVoltageTask(void *argument)
 
 		//Send CAN frames
 		auto data1 = CanFrames::make_average_stats(r);
-		//avg_msg.LoadData(data1.bytes.data(), 8);
-
 		auto data2 = CanFrames::make_voltage_extremes(r);
-		//highvolt_msg.LoadData(data2.bytes.data(), 8);
-
 		auto data3 = CanFrames::make_high_temp(r);
-		//hightemp_msg.LoadData(data3.bytes.data(), 8);
 
         bool allSuccessful = true;   // Track success for this cycle
 
-        // ---- EXAMPLE TRANSMISSIONS ----
-        /*
-        if (can.Send(&avg_msg) != HAL_OK) {
-            allSuccessful = false;
-        }
-        if (can.Send(&highvolt_msg) != HAL_OK) {
-            allSuccessful = false;
-        }
-        if (can.Send(&hightemp_msg) != HAL_OK) {
-            allSuccessful = false;
-        }
-		*/
 	    // Transmit
+	    can.sendStd(DeviceConfig::CAN_ID, data1.bytes, data1.dlc);
+	    osDelay(25);
+	    can.sendStd(DeviceConfig::CAN_ID, data2.bytes, data2.dlc);
+	    osDelay(25);
+	    can.sendStd(DeviceConfig::CAN_ID, data3.bytes, data3.dlc);
+
+	    osDelay(25);
+	    // Transmit from fake daughter board
 	    can.sendStd(0x101, data1.bytes, data1.dlc);
+	    osDelay(25);
 	    can.sendStd(0x101, data2.bytes, data2.dlc);
+	    osDelay(25);
 	    can.sendStd(0x101, data3.bytes, data3.dlc);
+
+
 
         // Set or clear CAN fault based on the entire cycle:
         if (!allSuccessful) {
