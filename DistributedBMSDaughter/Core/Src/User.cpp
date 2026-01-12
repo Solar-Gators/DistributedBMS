@@ -10,7 +10,6 @@
 
 //Lower Level Drivers
 #include "BQ7692000.hpp"
-#include "CanDriver.hpp"
 
 //Data handlers
 #include "BMS.hpp"
@@ -30,7 +29,7 @@
 
 //hardware intialization
 BQ7692000PW bq(&hi2c2);
-static CanBus can(hcan1);
+static CanBus can1(hcan1);
 //CANDriver::CANDevice can(&hcan1);
 
 //Data handler Inits
@@ -38,12 +37,7 @@ BMS bms(DeviceConfig::CELL_COUNT_CONF);
 FaultManager faultManager;
 DataValidator dataValidator;
 
-//Can Callback
-static int count = 0;
-HAL_StatusTypeDef allCallback(const CANDriver::CANFrame& msg, void* ctx){
-	count++;
-	return HAL_OK;
-}
+
 
 //ADC DMA stuff
 volatile bool TempDMAComplete;
@@ -60,15 +54,30 @@ static std::array<uint16_t, CELLS> cellTempADC{};
 
 bool debugMode;
 
+static void CanErrorCallback(CanBus& can, uint32_t err)
+{
+    if (err & CAN_ESR_BOFF) {
+        faultManager.setFault(FaultManager::FaultType::CAN_BUS_OFF);
+        return;
+    }
+
+    if (err & (CAN_ESR_EPVF | CAN_ESR_EWGF)) {
+        faultManager.setFault(FaultManager::FaultType::CAN_ERROR_PASSIVE);
+    }
+
+    if (err == HAL_CAN_ERROR_NONE) {
+        faultManager.clearFault(FaultManager::FaultType::CAN_ERROR_PASSIVE);
+        faultManager.clearFault(FaultManager::FaultType::CAN_BUS_OFF);
+    }
+}
 //Setup Function
 void setup(){
 
 	bmsMutex_id = osMutexNew(&BMS_Mutex_attr);
-	//can.addCallbackAll(allCallback);
-	//can.StartCANDevice();
-	//CAN Config
-	//can.configureFilterAcceptAll();  // or configureFilterStdMask(0x123, 0x7FF);
-	can.start();
+
+    can1.setErrorCallback(CanErrorCallback);
+    can1.configureFilterAcceptAll();
+    can1.start();
 
 	debugMode = true;
 
@@ -143,57 +152,75 @@ void StartDefaultTask(void *argument)
 }
 
 
-//Send Data over CAN (ignore task name)
 void StartVoltageTask(void *argument)
 {
+    for (;;)
+    {
+        /* ---------------- Acquire BMS data ---------------- */
+        osMutexAcquire(bmsMutex_id, osWaitForever);
+        bms.update();
+        const auto& r = bms.results();
+        osMutexRelease(bmsMutex_id);
 
-	//Initalize CAN frames
-
-
-	for (;;)
-	{
-		//Update BMS Values
-		osMutexAcquire(bmsMutex_id, osWaitForever);
-		bms.update();
-		auto& r = bms.results();
-		osMutexRelease(bmsMutex_id);
-
-		//Send CAN frames
-		auto data1 = CanFrames::make_average_stats(r);
-		auto data2 = CanFrames::make_voltage_extremes(r);
-		auto data3 = CanFrames::make_high_temp(r);
-
-        bool allSuccessful = true;   // Track success for this cycle
-
-	    // Transmit
-	    can.sendStd(DeviceConfig::CAN_ID, data1.bytes, data1.dlc);
-	    osDelay(25);
-	    can.sendStd(DeviceConfig::CAN_ID, data2.bytes, data2.dlc);
-	    osDelay(25);
-	    can.sendStd(DeviceConfig::CAN_ID, data3.bytes, data3.dlc);
-
-	    osDelay(25);
-	    // Transmit from fake daughter board
-	    can.sendStd(0x101, data1.bytes, data1.dlc);
-	    osDelay(25);
-	    can.sendStd(0x101, data2.bytes, data2.dlc);
-	    osDelay(25);
-	    can.sendStd(0x101, data3.bytes, data3.dlc);
-
-
-
-        // Set or clear CAN fault based on the entire cycle:
-        if (!allSuccessful) {
-            faultManager.setFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
-        } else {
-            faultManager.clearFault(FaultManager::FaultType::CAN_TRANSMIT_ERROR);
+        /* ---------------- CAN housekeeping ---------------- */
+        can1.poll();   // Required for recovery / error handling
+        if (can1.busOffLatched()) {
+            faultManager.setFault(FaultManager::FaultType::CAN_BUS_OFF);
+        }else{
+        	faultManager.clearFault(FaultManager::FaultType::CAN_BUS_OFF);
         }
 
-        if(faultManager.getFaultMask() == 0){
-        	HAL_GPIO_TogglePin(GPIOB, OK_Pin);
+
+        /* ---------------- Build CAN frames ---------------- */
+        const auto avgStats     = CanFrames::make_average_stats(r);
+        const auto voltExtremes = CanFrames::make_voltage_extremes(r);
+        const auto highTemp     = CanFrames::make_high_temp(r);
+
+        /* ---------------- Transmit frames ---------------- */
+        bool tx_ok = true;
+
+        tx_ok &= (can1.sendStd(DeviceConfig::CAN_ID,
+                               avgStats.bytes,
+                               avgStats.dlc) == CanBus::Result::Ok);
+
+        tx_ok &= (can1.sendStd(DeviceConfig::CAN_ID,
+                               voltExtremes.bytes,
+                               voltExtremes.dlc) == CanBus::Result::Ok);
+
+        tx_ok &= (can1.sendStd(DeviceConfig::CAN_ID,
+                               highTemp.bytes,
+                               highTemp.dlc) == CanBus::Result::Ok);
+
+        /* ---------------- Fault handling ---------------- */
+        if (!tx_ok) {
+            faultManager.setFault(FaultManager::FaultType::CAN_TX_ERROR);
+        } else {
+            faultManager.clearFault(FaultManager::FaultType::CAN_TX_ERROR);
+
+
+        }
+
+
+        /* ---------------- Status LED ---------------- */
+        if (faultManager.getFaultMask() == 0) {
+            HAL_GPIO_TogglePin(GPIOB, OK_Pin);
         }
 
         osDelay(DeviceConfig::CYCLE_TIME_MS);
-
-	}
+    }
 }
+
+
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef* hcan) {
+    CanBus::handleRxFifo0(hcan);
+}
+
+void HAL_CAN_BusOffCallback(CAN_HandleTypeDef* hcan) {
+    CanBus::handleBusOff(hcan);
+}
+
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef* hcan) {
+    CanBus::handleError(hcan);
+}
+
+

@@ -17,3 +17,4 @@ extern ADC_HandleTypeDef hadc1;
 extern const osMutexAttr_t BMS_Mutex_attr;
 extern osMutexId_t bmsMutex_id;
 void setup();
+

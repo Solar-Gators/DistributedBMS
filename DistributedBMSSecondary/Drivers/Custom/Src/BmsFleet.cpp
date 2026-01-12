@@ -8,7 +8,7 @@
 #include <cstring>
 #include "cmsis_os.h"
 
-#define stale 500
+#define stale 2000
 
 void ModuleData::clear() {
 	highTemp = -1000;
@@ -71,6 +71,7 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms){
 	ModuleData& M = modules_[moduleIndex];
 
 	M.last_ms = osKernelGetTickCount();
+	M.online = true;
 
 	const uint8_t* data = msg.data;
 
@@ -82,7 +83,7 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms){
 			M.avgTemp = avgTemp;
 			M.avgVoltage = avgVoltage;
 			M.num_cells = numCells;
-			M.last_ms = now_ms;
+
 
 		}
 
@@ -98,7 +99,7 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms){
 			M.lowVoltageID = lowIndex;
 			M.highVoltageID = highIndex;
 			M.faults = faults;
-			M.last_ms = now_ms;
+
 		}
 	}break;
 
@@ -107,7 +108,7 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms){
 		if(CanFrames::decodeHighTemp(data, highTemp, highIndex)){
 			M.highTemp = highTemp;
 			M.highTempID = highIndex;
-			M.last_ms = now_ms;
+
 		}
 	}break;
 
@@ -134,7 +135,7 @@ void BmsFleet::processModules() {
         auto& m = modules_[i];
 
         // Skip stale/offline modules
-        if (m.online)
+        if (!m.online)
         {
             cellOffset += m.num_cells;  // still advance offset so indexing stays consistent
             continue;

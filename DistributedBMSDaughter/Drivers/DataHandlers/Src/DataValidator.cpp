@@ -33,7 +33,7 @@ uint8_t DataValidator::validateCellVoltages(
      
      // Check range for each cell
      for (size_t i = 0; i < 5; ++i) {
-         if (voltages_mV[i] == 0) continue; // Skip unused cells
+         if (voltages_mV[i] < 200) continue; // Skip unused cells
          
          if (voltages_mV[i] < config_.min_cell_voltage_mV){
         	 return(To_Low);

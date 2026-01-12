@@ -67,6 +67,7 @@ void StartCanTask(void *argument){
 			fleet.handleMessage(rx, HAL_GetTick());
 			HAL_GPIO_TogglePin(OK_GPIO_Port, OK_Pin);
 		}
+		osDelay(10);
 	}
-	osDelay(10);
+
 }

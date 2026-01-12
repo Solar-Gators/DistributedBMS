@@ -23,7 +23,7 @@ struct ModuleData {
 	float avgTemp = 0;
 	uint8_t highTempID = 0;
 
-	uint16_t highVoltage = 0, lowVoltage = 0;
+	uint16_t highVoltage = 0, lowVoltage = UINT16_MAX;
 	uint8_t lowVoltageID = 0, highVoltageID = 0;
 
 	float avgVoltage = 0;
@@ -34,7 +34,7 @@ struct ModuleData {
 
 	uint32_t last_ms = 0;
 
-	bool online;
+	bool online = false;
 
 	void clear();
 
@@ -45,7 +45,7 @@ struct FleetData {
 	uint32_t totalVoltage;
 	uint16_t highestVoltage;
 	uint16_t lowestvoltage;
-	uint16_t highestTemp;
+	float highestTemp;
 
 	//IDs should be in reference to the whole pack so we need to add up all the cells from previous modules
 	uint8_t highVoltageID;
