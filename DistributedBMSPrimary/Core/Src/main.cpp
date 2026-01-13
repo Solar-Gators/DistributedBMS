@@ -29,6 +29,7 @@
 #include "lsm6dso32.hpp"
 #include "ina226.hpp"
 #include <string.h>
+#include "ads1115.hpp"
 
 /* USER CODE END Includes */
 
@@ -168,76 +169,12 @@ BmsController controller;
 uint8_t usbTxBuf[128];
 
 
-// ---- pins (change to match your board) ----
-
-static void spi_cmd24(uint32_t cmd, uint8_t *rx3)
-{
-    uint8_t tx[3];
-
-
-	    tx[2] = 0x00;
-	    tx[1] = 0x11;
-	    tx[0] = 0x00;          // LSB
-
-
-    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_RESET);
-    HAL_SPI_TransmitReceive(&hspi1, tx, rx3, 3, 1000);
-    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_SET);
-}
-
-static uint32_t rreg_cmd(uint8_t addr)
-{
-    uint16_t op = (0b101 << 13) | ((addr & 0x7F) << 6) | 0x00; // RREG, 1 reg
-    return ((uint32_t)op << 8);   // pad to 24 bits
-}
-
-uint16_t ADS131_ReadReg(uint8_t addr)
-{
-    uint8_t rx3[3];
-
-    uint32_t cmd = rreg_cmd(addr);
-
-    spi_cmd24(cmd, rx3);        // send RREG
-    spi_cmd24(0x000000, rx3);   // NULL → clocks response
-
-    uint16_t reg16 = ((uint16_t)rx3[0] << 8) | rx3[1];
-    return reg16;
-}
-
-void ADS131_SendRecv24_fast(uint32_t cmd, uint8_t rx[3])
-{
-    uint8_t b0 = (cmd >> 16) & 0xFF;
-    uint8_t b1 = (cmd >> 8)  & 0xFF;
-    uint8_t b2 = cmd & 0xFF;
-
-    // Pull CS low
-    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_RESET);
-
-    // ---- BYTE 0 ----
-    SPI1->DR = b0;
-    while (!(SPI1->SR & SPI_SR_RXNE));   // wait for RX
-    rx[0] = SPI1->DR;                    // read byte
-
-    // ---- BYTE 1 ----
-    SPI1->DR = b1;
-    while (!(SPI1->SR & SPI_SR_RXNE));
-    rx[1] = SPI1->DR;
-
-    // ---- BYTE 2 ----
-    SPI1->DR = b2;
-    while (!(SPI1->SR & SPI_SR_RXNE));
-    rx[2] = SPI1->DR;
-
-    // wait for bus idle (ensures final clock has finished)
-    while (SPI1->SR & SPI_SR_BSY);
-
-    // CS high
-    HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_SET);
-}
-
-
-
-
+ADS1115 adc(
+    &hi2c2,
+    ADS1115::Addr7::GND,
+    ADS1115::Pga::FS_4_096V,
+    ADS1115::DataRate::SPS_128
+);
 
 /* USER CODE END 0 */
 
@@ -306,6 +243,7 @@ int main(void)
       while (1) {}
   }
 
+  adc.init();
 
 
   /* USER CODE END 2 */
@@ -319,13 +257,6 @@ int main(void)
 	  imu.readScaled(d);
 	  INA226::Measurement m;
 	  ina.readMeasurement(m);
-
-	  uint8_t rx[3];
-
-
-
-	  ADS131_SendRecv24_fast(0x001100, rx);
-
 
 
 
@@ -373,8 +304,10 @@ int main(void)
 		//CDC_Transmit_FS(usbTxBuf, usbTxBufLen);
 	}
 
+	float result;
+	adc.readSingleEnded(0, result);
 
-
+	float intermediate = ((result-0.07)*1.5)+0.02;
 
 	HAL_GPIO_TogglePin(GPIOC, OK_Pin);
 	HAL_Delay(200);
