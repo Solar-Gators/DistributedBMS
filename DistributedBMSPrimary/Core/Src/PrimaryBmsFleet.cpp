@@ -14,62 +14,165 @@ PrimaryBmsFleet::PrimaryBmsFleet() {
     summary_.clear();
 }
 
-bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t* payload, uint16_t len, uint32_t now_ms) {
-    if (!payload || len < sizeof(UartFleetSummaryPayload)) {
+bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t* payload,
+                                               uint16_t len,
+                                               uint32_t now_ms)
+{
+    constexpr uint16_t EXPECTED_LEN = 12;
+
+    if (!payload || len != EXPECTED_LEN) {
         return false;
     }
 
-    UartFleetSummaryPayload p;
-    memcpy(&p, payload, sizeof(p));
+    size_t offset = 0;
 
-    if (p.type != UART_FLEET_SUMMARY) {
+    // ---- Message type ----
+    uint8_t type = payload[offset++];
+    if (type != UART_FLEET_SUMMARY) {
         return false;
     }
 
-    summary_.hottest_module_idx     = p.hottest_idx;
-    summary_.hottest_temp_C         = uart_from_cdeg10(p.hottest_c_x10);
-    summary_.lowest_cell_module_idx = p.lowest_idx;
-    summary_.lowest_cell_mV         = p.lowest_mV;
-    summary_.num_online_modules     = p.num_online;
-    summary_.secondary_timestamp_ms = p.now_ms;
-    summary_.last_update_ms         = now_ms;
+    auto get_u16 = [&](uint16_t& v) {
+        v  = payload[offset++];
+        v |= static_cast<uint16_t>(payload[offset++]) << 8;
+    };
+
+    auto get_u8 = [&](uint8_t& v) {
+        v = payload[offset++];
+    };
+
+    uint16_t totalVoltage;
+    uint16_t highestVoltage;
+    uint16_t lowestVoltage;
+    uint16_t highestTemp;
+    uint8_t  highVoltageID;
+    uint8_t  lowVoltageID;
+    uint8_t  highTempID;
+
+    get_u16(totalVoltage);
+    get_u16(highestVoltage);
+    get_u16(lowestVoltage);
+    get_u16(highestTemp);
+    get_u8(highVoltageID);
+    get_u8(lowVoltageID);
+    get_u8(highTempID);
+
+    // ---- Store decoded values ----
+    summary_.total_voltage_mV   = totalVoltage;
+    summary_.highest_cell_mV    = highestVoltage;
+    summary_.lowest_cell_mV     = lowestVoltage;
+    summary_.highest_temp_C     = highestTemp;
+
+    summary_.highest_cell_idx   = highVoltageID;
+    summary_.lowest_cell_idx    = lowVoltageID;
+    summary_.highest_temp_idx   = highTempID;
+
+    summary_.last_update_ms = now_ms;
 
     return true;
 }
 
-bool PrimaryBmsFleet::update_module_summary(const uint8_t* payload, uint16_t len, uint32_t now_ms) {
-    if (!payload || len < sizeof(UartModuleSummaryPayload)) {
+
+bool PrimaryBmsFleet::update_module_summary(const uint8_t* payload,
+                                            uint16_t len,
+                                            uint32_t now_ms)
+{
+    if (!payload || len < 1) {
         return false;
     }
 
-    UartModuleSummaryPayload p;
-    memcpy(&p, payload, sizeof(p));
+    size_t offset = 0;
 
-    if (p.type != UART_MODULE_SUMMARY) {
+    // ---- Message type ----
+    uint8_t type = payload[offset++];
+    if (type != UART_MODULE_SUMMARY) {
         return false;
     }
 
-    if (p.module_idx >= PrimaryBmsFleetCfg::MAX_MODULES) {
+    // ---- Minimum payload length check ----
+    // type (1)
+    // module_idx (1)
+    // high_c_x10 (2)
+    // high_temp_cell (1)
+    // high_mV (2)
+    // low_mV (2)
+    // low_idx (1)
+    // high_idx (1)
+    // avg_c_x10 (2)
+    // avg_cell_mV (2)
+    // num_cells (1)
+    // age_ms (4)
+    constexpr uint16_t MIN_LEN = 22;
+
+    if (len < MIN_LEN) {
         return false;
     }
 
-    ModuleSummaryData& M = modules_[p.module_idx];
-    M.valid           = true;
-    M.module_idx      = p.module_idx;
-    M.high_temp_C     = uart_from_cdeg10(p.high_c_x10);
-    M.high_temp_cell  = p.high_temp_cell;
-    M.high_mV         = p.high_mV;
-    M.low_mV          = p.low_mV;
-    M.low_idx         = p.low_idx;
-    M.high_idx        = p.high_idx;
-    M.avg_temp_C      = uart_from_cdeg10(p.avg_c_x10);
-    M.avg_cell_mV     = p.avg_cell_mV;
-    M.num_cells       = p.num_cells;
-    M.age_ms          = p.age_ms;
-    M.last_update_ms  = now_ms;
+    auto get_u8 = [&](uint8_t& v) {
+        v = payload[offset++];
+    };
+
+    auto get_u16 = [&](uint16_t& v) {
+        v = payload[offset++];
+        v |= static_cast<uint16_t>(payload[offset++]) << 8;
+    };
+
+    auto get_u32 = [&](uint32_t& v) {
+        v  = payload[offset++];
+        v |= static_cast<uint32_t>(payload[offset++]) << 8;
+        v |= static_cast<uint32_t>(payload[offset++]) << 16;
+        v |= static_cast<uint32_t>(payload[offset++]) << 24;
+    };
+
+    uint8_t  module_idx;
+    uint16_t high_c_x10;
+    uint8_t  high_temp_cell;
+    uint16_t high_mV;
+    uint16_t low_mV;
+    uint8_t  low_idx;
+    uint8_t  high_idx;
+    uint16_t avg_c_x10;
+    uint16_t avg_cell_mV;
+    uint8_t  num_cells;
+    uint32_t age_ms;
+
+    get_u8(module_idx);
+
+    if (module_idx >= PrimaryBmsFleetCfg::MAX_MODULES) {
+        return false;
+    }
+
+    get_u16(high_c_x10);
+    get_u8(high_temp_cell);
+    get_u16(high_mV);
+    get_u16(low_mV);
+    get_u8(low_idx);
+    get_u8(high_idx);
+    get_u16(avg_c_x10);
+    get_u16(avg_cell_mV);
+    get_u8(num_cells);
+    get_u32(age_ms);
+
+    // ---- Update module state ----
+    ModuleSummaryData& M = modules_[module_idx];
+
+    M.valid            = true;
+    M.module_idx       = module_idx;
+    M.high_temp_C      = uart_from_cdeg10(high_c_x10);
+    M.high_temp_cell   = high_temp_cell;
+    M.high_mV          = high_mV;
+    M.low_mV           = low_mV;
+    M.low_idx          = low_idx;
+    M.high_idx         = high_idx;
+    M.avg_temp_C       = uart_from_cdeg10(avg_c_x10);
+    M.avg_cell_mV      = avg_cell_mV;
+    M.num_cells        = num_cells;
+    M.age_ms           = age_ms;
+    M.last_update_ms   = now_ms;
 
     return true;
 }
+
 
 bool PrimaryBmsFleet::update_heartbeat(const uint8_t* payload, uint16_t len, uint32_t now_ms) {
     if (!payload || len < sizeof(UartHeartbeatPayload)) {
@@ -131,18 +234,17 @@ bool PrimaryBmsFleet::update_summary_from_modules(uint32_t now_ms) {
     if (num_online == 0)
         return false;
 
-    summary_.hottest_module_idx       = hottest_idx;
-    summary_.hottest_temp_C           = hottest_temp;
+    summary_.highest_temp_idx  = hottest_idx;
+    summary_.highest_temp_C    = hottest_temp;
 
-    summary_.lowest_cell_module_idx   = lowest_idx;
-    summary_.lowest_cell_mV           = lowest_mV;
+    summary_.lowest_cell_idx   = lowest_idx;
+    summary_.lowest_cell_mV    = lowest_mV;
 
-    summary_.highest_cell_module_idx  = highest_idx;   // <-- NEW
-    summary_.highest_cell_mV          = highest_mV;    // <-- NEW
+    summary_.highest_cell_idx  = highest_idx;   // <-- NEW
+    summary_.highest_cell_mV   = highest_mV;    // <-- NEW
 
-    summary_.num_online_modules       = num_online;
-    summary_.secondary_timestamp_ms   = now_ms;
-    summary_.last_update_ms           = now_ms;
+
+    summary_.last_update_ms    = now_ms;
 
     return true;
 }

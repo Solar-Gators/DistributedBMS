@@ -193,6 +193,7 @@ void StartVoltageTask(void *argument)
                                highTemp.bytes,
                                highTemp.dlc) == CanBus::Result::Ok);
 
+
         /* ---------------- Fault handling ---------------- */
         if (!tx_ok) {
             faultManager.setFault(FaultManager::FaultType::CAN_TX_ERROR);

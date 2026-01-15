@@ -6,8 +6,8 @@
 extern "C" {
 #endif
 
-#define UART_FLEET_SUMMARY   ((uint8_t)0x10)
-#define UART_MODULE_SUMMARY  ((uint8_t)0x11)
+#define UART_FLEET_SUMMARY   ((uint8_t)0x11)
+#define UART_MODULE_SUMMARY  ((uint8_t)0x10)
 #define UART_HEARTBEAT       ((uint8_t)0x12)
 
 #pragma pack(push, 1)

@@ -18,7 +18,7 @@ void BmsController::updateFaultsFromSummary(FleetSummaryData summary){
 	}else{
 		faults = faults & 0b11111101;
 	}
-	if(summary.hottest_temp_C > 45){
+	if(summary.highest_temp_C > 45){
 		faults = faults | 0b00000100;
 	}else{
 		faults = faults & 0b11111011;

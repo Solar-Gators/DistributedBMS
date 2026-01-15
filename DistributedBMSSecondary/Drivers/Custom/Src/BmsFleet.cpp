@@ -123,7 +123,7 @@ void BmsFleet::processModules() {
     FleetData fleet{};
     fleet.totalVoltage   = 0;
     fleet.highestVoltage = 0;
-    fleet.lowestvoltage  = 0xFFFF;      // initialize high so first real value replaces it
+    fleet.lowestVoltage  = 0xFFFF;      // initialize high so first real value replaces it
     fleet.highestTemp    = -1000;
 
     uint8_t cellOffset = 0;             // used to compute global cell indexes
@@ -151,8 +151,8 @@ void BmsFleet::processModules() {
         }
 
         // 3. Lowest cell voltage in pack
-        if (m.lowVoltage < fleet.lowestvoltage) {
-            fleet.lowestvoltage = m.lowVoltage;
+        if (m.lowVoltage < fleet.lowestVoltage) {
+            fleet.lowestVoltage = m.lowVoltage;
             fleet.lowVoltageID  = cellOffset + m.lowVoltageID;
         }
 
@@ -170,7 +170,7 @@ void BmsFleet::processModules() {
 }
 
 
-
+/*
 size_t BmsFleet::packFleetData(uint8_t* out) const
 {
     size_t offset = 0;
@@ -202,5 +202,51 @@ size_t BmsFleet::packFleetData(uint8_t* out) const
 
     return offset; // = 13 bytes
 }
+*/
+size_t BmsFleet::packFleetData(uint8_t* out) const
+{
+    size_t offset = 0;
+    const FleetData& f = fleet_;
+
+    // ---- UART framing header ----
+    out[offset++] = 0xA5;
+    out[offset++] = 0x5A;
+
+    // Reserve length field
+    size_t length_offset = offset;
+    out[offset++] = 0x00; // length LSB
+    out[offset++] = 0x00; // length MSB
+
+    size_t payload_start = offset;
+
+    // ---- Payload ----
+    out[offset++] = 17;  // payload[0] = message ID
+
+    auto put_u16 = [&](uint16_t v) {
+        out[offset++] = v & 0xFF;
+        out[offset++] = (v >> 8) & 0xFF;
+    };
+
+    auto put_u8 = [&](uint8_t v) {
+        out[offset++] = v;
+    };
+
+    put_u16(f.totalVoltage);
+    put_u16(f.highestVoltage);
+    put_u16(f.lowestVoltage);
+    put_u16(f.highestTemp);
+
+    put_u8(f.highVoltageID);
+    put_u8(f.lowVoltageID);
+    put_u8(f.highTempID);
+
+    // ---- Finalize payload length ----
+    uint16_t payload_len = offset - payload_start;
+    out[length_offset + 0] = payload_len & 0xFF;
+    out[length_offset + 1] = (payload_len >> 8) & 0xFF;
+
+    return offset; // total UART frame length
+}
+
 
 

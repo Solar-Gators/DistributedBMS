@@ -44,7 +44,7 @@ struct ModuleData {
 struct FleetData {
 	uint32_t totalVoltage;
 	uint16_t highestVoltage;
-	uint16_t lowestvoltage;
+	uint16_t lowestVoltage;
 	float highestTemp;
 
 	//IDs should be in reference to the whole pack so we need to add up all the cells from previous modules

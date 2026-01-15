@@ -34,7 +34,7 @@ namespace DeviceConfig {
     
     // Device Information
     // ==================
-    static constexpr uint8_t CELL_COUNT_CONF = 4;        // Number of cells monitored by this device
+    static constexpr uint8_t CELL_COUNT_CONF = 5;        // Number of cells monitored by this device
     static constexpr uint32_t CYCLE_TIME_MS = 250;   // Main loop cycle time in milliseconds
     
     // Debug Configuration

@@ -108,6 +108,9 @@ static void on_uart_packet(const uint8_t* payload, uint16_t len)
 			fleet.update_module_summary(payload, len, HAL_GetTick());
 			break;
 		}
+		case UART_FLEET_SUMMARY: {
+			fleet.update_from_uart_payload(payload, len, HAL_GetTick());
+		}
 
 		case UART_HEARTBEAT: {
 			fleet.update_heartbeat(payload, len, HAL_GetTick());
@@ -263,7 +266,7 @@ int main(void)
 	  uint32_t now_ms = HAL_GetTick();
 
 	  // 1) Keep fleet summary fresh (still uses your existing logic)
-	  fleet.update_summary_from_modules(now_ms);
+	  //fleet.update_summary_from_modules(now_ms);
 	  const auto& summary = fleet.summary();
 
 	  if(fleet.has_data(now_ms)){
