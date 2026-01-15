@@ -1,5 +1,5 @@
 /*
- * BmsFleet2.hpp
+ * BmsFleet.hpp
  *
  *  Created on: Nov 26, 2025
  *      Author: samrb
@@ -8,85 +8,106 @@
 #ifndef CUSTOM_INC_BMSFLEET_HPP_
 #define CUSTOM_INC_BMSFLEET_HPP_
 
-#define MAX_MODULES 8
-#define STALE_MS 1500
-
 #pragma once
+
 #include <cstdint>
 #include <array>
 #include "CanFrames.hpp"
 #include "CanBus.hpp"
-//#include "CanDriver.hpp"
 
+// -----------------------------------------------------------------------------
+// Configuration
+// -----------------------------------------------------------------------------
+constexpr uint8_t  MAX_MODULES = 8;
+constexpr uint32_t STALE_MS    = 1500;
+
+// -----------------------------------------------------------------------------
+// UART message IDs
+// -----------------------------------------------------------------------------
+enum UartMessageType : uint8_t {
+    UART_FLEET_SUMMARY  = 16,
+    UART_MODULE_SUMMARY = 17,
+};
+
+// -----------------------------------------------------------------------------
+// Module-level data (derived from CAN)
+// -----------------------------------------------------------------------------
 struct ModuleData {
-	float highTemp = -1000;
-	float avgTemp = 0;
-	uint8_t highTempID = 0;
+    float    highTemp = -1000.0f;
+    float    avgTemp  = 0.0f;
+    uint8_t  highTempID = 0;
 
-	uint16_t highVoltage = 0, lowVoltage = UINT16_MAX;
-	uint8_t lowVoltageID = 0, highVoltageID = 0;
+    uint16_t highVoltage = 0;
+    uint16_t lowVoltage  = UINT16_MAX;
+    uint8_t  lowVoltageID = 0;
+    uint8_t  highVoltageID = 0;
 
-	float avgVoltage = 0;
+    float    avgVoltage = 0.0f;
 
+    uint8_t  num_cells = 0;
+    uint8_t  faults = 0;
 
-	uint8_t num_cells = 0;
-	uint8_t faults = 0;
+    uint32_t last_ms = 0;
+    bool     online  = false;
 
-	uint32_t last_ms = 0;
-
-	bool online = false;
-
-	void clear();
-
-
+    void clear();
 };
 
+// -----------------------------------------------------------------------------
+// Fleet-level aggregated data
+// -----------------------------------------------------------------------------
 struct FleetData {
-	uint32_t totalVoltage;
-	uint16_t highestVoltage;
-	uint16_t lowestVoltage;
-	float highestTemp;
+    uint32_t totalVoltage = 0;      // mV
+    uint16_t highestVoltage = 0;    // mV
+    uint16_t lowestVoltage  = 0;    // mV
 
-	//IDs should be in reference to the whole pack so we need to add up all the cells from previous modules
-	uint8_t highVoltageID;
-	uint8_t lowVoltageID;
-	uint8_t highTempID;
+    float    highestTemp = -1000.0f; // °C
 
-
+    // Global cell indices (across entire pack)
+    uint8_t highVoltageID = 0;
+    uint8_t lowVoltageID  = 0;
+    uint8_t highTempID    = 0;
 };
+
+// -----------------------------------------------------------------------------
+// CAN-ID → module index mapping
+// -----------------------------------------------------------------------------
 struct IdMapElement {
-	uint16_t can_id = 0;
-	uint8_t index = 0;
-	bool used = false;
+    uint16_t can_id = 0;
+    uint8_t  index  = 0;
+    bool     used   = false;
 };
 
+// -----------------------------------------------------------------------------
+// BmsFleet
+// -----------------------------------------------------------------------------
 class BmsFleet {
 public:
-	BmsFleet();
+    BmsFleet();
 
-	bool registerDaughter(uint16_t can_id, uint8_t index);
-	void handleMessage(const CanBus::Frame& msg, uint32_t now_ms);
-	void processModules();
+    // CAN handling
+    bool registerDaughter(uint16_t can_id, uint8_t index);
+    void handleMessage(const CanBus::Frame& msg, uint32_t now_ms);
 
-	ModuleData& module(uint8_t id);
+    // Processing
+    void processModules();
+    void online(uint32_t now_ms);
+    bool isOnline(uint8_t index);
 
-	const FleetData& fleet() const { return fleet_; }
 
-	void online(uint32_t now_ms);
+    // Accessors
+    ModuleData& module(uint8_t id);
+    const FleetData& fleet() const { return fleet_; }
 
-	bool isOnline(uint8_t index);
-
-	size_t packFleetData(uint8_t* out) const;
+    // UART packing
+    size_t packFleetData(uint8_t* out) const;
+    size_t packModuleData(uint8_t* out, uint8_t module_idx) const;  // <-- NEW
 
 private:
-	std::array<ModuleData, MAX_MODULES> modules_;
-	std::array<IdMapElement, MAX_MODULES> idmap_;
+    std::array<ModuleData,  MAX_MODULES> modules_{};
+    std::array<IdMapElement, MAX_MODULES> idmap_{};
 
-	FleetData fleet_;
-
-
-
+    FleetData fleet_{};
 };
-
 
 #endif /* CUSTOM_INC_BMSFLEET_HPP_ */

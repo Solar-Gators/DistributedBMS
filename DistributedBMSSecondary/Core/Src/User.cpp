@@ -39,25 +39,53 @@ void setup(){
 
 void StartDefaultTask(void *argument)
 {
+    uint8_t txbuf[64];
+
+    static uint8_t next_module = 0;
+
+    for (;;)
+    {
+        // -----------------------------------------------------------------
+        // Update fleet aggregation
+        // -----------------------------------------------------------------
+        fleet.processModules();
+
+        // -----------------------------------------------------------------
+        // Send fleet-level summary (every cycle)
+        // -----------------------------------------------------------------
+        size_t len = fleet.packFleetData(txbuf);
+        if (len > 0) {
+            HAL_UART_Transmit(&huart2, txbuf, len, 10000);
+        }
+
+        // -----------------------------------------------------------------
+        // Send ONE module summary (round-robin)
+        // -----------------------------------------------------------------
+        for (uint8_t i = 0; i < MAX_MODULES; i++) {
+            uint8_t idx = (next_module + i) % MAX_MODULES;
+
+            if (fleet.isOnline(idx)) {
+                size_t mlen = fleet.packModuleData(txbuf, idx);
+                if (mlen > 0) {
+                    HAL_UART_Transmit(&huart2, txbuf, mlen, 10000);
+                }
+
+                // Advance round-robin pointer
+                next_module = (idx + 1) % MAX_MODULES;
+                break;
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // UART pacing
+        // -----------------------------------------------------------------
 
 
 
-	uint8_t txbuf[64];
-
-
-	for(;;)
-	{
-
-		fleet.processModules();
-
-		size_t len = fleet.packFleetData(txbuf);
-
-		HAL_UART_Transmit(&huart2, txbuf, len, 10000);
-
-		osDelay(250);
-	}
-
+        osDelay(250);
+    }
 }
+
 
 void StartCanTask(void *argument){
 

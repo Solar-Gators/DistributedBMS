@@ -104,9 +104,7 @@ bool PrimaryBmsFleet::update_module_summary(const uint8_t* payload,
     // age_ms (4)
     constexpr uint16_t MIN_LEN = 22;
 
-    if (len < MIN_LEN) {
-        return false;
-    }
+
 
     auto get_u8 = [&](uint8_t& v) {
         v = payload[offset++];

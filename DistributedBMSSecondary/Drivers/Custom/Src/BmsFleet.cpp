@@ -170,39 +170,7 @@ void BmsFleet::processModules() {
 }
 
 
-/*
-size_t BmsFleet::packFleetData(uint8_t* out) const
-{
-    size_t offset = 0;
-    const FleetData& f = fleet_;
 
-    memcpy(out + offset, &f.totalVoltage, sizeof(f.totalVoltage));
-    offset += sizeof(f.totalVoltage);
-
-    memcpy(out + offset, &f.highestVoltage, sizeof(f.highestVoltage));
-    offset += sizeof(f.highestVoltage);
-
-    memcpy(out + offset, &f.lowestvoltage, sizeof(f.lowestvoltage));
-    offset += sizeof(f.lowestvoltage);
-
-    memcpy(out + offset, &f.highestTemp, sizeof(f.highestTemp));
-    offset += sizeof(f.highestTemp);
-
-    memcpy(out + offset, &f.highVoltageID, sizeof(f.highVoltageID));
-    offset += sizeof(f.highVoltageID);
-
-    memcpy(out + offset, &f.lowVoltageID, sizeof(f.lowVoltageID));
-    offset += sizeof(f.lowVoltageID);
-
-    memcpy(out + offset, &f.highTempID, sizeof(f.highTempID));
-    offset += sizeof(f.highTempID);
-
-    out[offset++] = '\r';
-    out[offset++] = '\n';
-
-    return offset; // = 13 bytes
-}
-*/
 size_t BmsFleet::packFleetData(uint8_t* out) const
 {
     size_t offset = 0;
@@ -220,7 +188,7 @@ size_t BmsFleet::packFleetData(uint8_t* out) const
     size_t payload_start = offset;
 
     // ---- Payload ----
-    out[offset++] = 17;  // payload[0] = message ID
+    out[offset++] = UART_FLEET_SUMMARY;  // payload[0] = message ID
 
     auto put_u16 = [&](uint16_t v) {
         out[offset++] = v & 0xFF;
@@ -247,6 +215,70 @@ size_t BmsFleet::packFleetData(uint8_t* out) const
 
     return offset; // total UART frame length
 }
+
+size_t BmsFleet::packModuleData(uint8_t* out, uint8_t module_idx) const
+{
+    if (module_idx >= modules_.size())
+        return 0;
+
+    const ModuleData& m = modules_[module_idx];
+
+    size_t offset = 0;
+
+    // ---- UART framing ----
+    out[offset++] = 0xA5;
+    out[offset++] = 0x5A;
+
+    size_t length_offset = offset;
+    out[offset++] = 0x00;
+    out[offset++] = 0x00;
+
+    size_t payload_start = offset;
+
+    // ---- Payload ----
+    out[offset++] = UART_MODULE_SUMMARY;
+    out[offset++] = module_idx;
+
+    auto put_u8  = [&](uint8_t v)  { out[offset++] = v; };
+    auto put_u16 = [&](uint16_t v) {
+        out[offset++] = v & 0xFF;
+        out[offset++] = (v >> 8) & 0xFF;
+    };
+    auto put_u32 = [&](uint32_t v) {
+        out[offset++] =  v        & 0xFF;
+        out[offset++] = (v >> 8)  & 0xFF;
+        out[offset++] = (v >> 16) & 0xFF;
+        out[offset++] = (v >> 24) & 0xFF;
+    };
+
+    // Convert floats → fixed-point
+    int16_t high_c_x10 = static_cast<int16_t>(m.highTemp * 10.0f);
+    int16_t avg_c_x10  = static_cast<int16_t>(m.avgTemp  * 10.0f);
+
+    put_u16(high_c_x10);
+    put_u8 (m.highTempID);
+
+    put_u16(m.highVoltage);
+    put_u16(m.lowVoltage);
+    put_u8 (m.lowVoltageID);
+    put_u8 (m.highVoltageID);
+
+    put_u16(avg_c_x10);
+    put_u16(m.avgVoltage);
+
+    put_u8 (m.num_cells);
+
+    uint32_t age_ms = osKernelGetTickCount() - m.last_ms;
+    put_u32(age_ms);
+
+    // ---- Finalize length ----
+    uint16_t payload_len = offset - payload_start;
+    out[length_offset + 0] = payload_len & 0xFF;
+    out[length_offset + 1] = (payload_len >> 8) & 0xFF;
+
+    return offset;
+}
+
 
 
 
