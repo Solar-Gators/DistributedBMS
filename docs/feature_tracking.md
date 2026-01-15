@@ -52,6 +52,10 @@
 | CAN Average Stats Frame | 🟢 | P0 | - | Type 2: avg temp, avg voltage, cell count | CAN Driver |
 | CAN Voltage Extremes Frame | 🟢 | P0 | - | Type 1: min/max voltages with indices | CAN Driver |
 | CAN High Temp Frame | 🟢 | P0 | - | Type 0: highest temperature with index | CAN Driver |
+| CAN Individual Cell Voltages | ⚪ | P1 | - | Type 3: All individual cell voltages (may need multiple frames) | CAN Driver, BMS Core |
+| CAN Individual Cell Temperatures | ⚪ | P1 | - | Type 4: All individual cell temperatures (may need multiple frames) | CAN Driver, BMS Core |
+| CAN Cell Voltage Frame (Single) | ⚪ | P2 | - | Type 5: Single cell voltage with index | CAN Driver |
+| CAN Cell Temperature Frame (Single) | ⚪ | P2 | - | Type 6: Single cell temperature with index | CAN Driver |
 | CAN Fault Reporting | 🟡 | P1 | - | Send fault mask over CAN | Fault Manager |
 | CAN Heartbeat | ⚪ | P2 | - | Periodic heartbeat message | CAN Driver |
 
@@ -87,6 +91,12 @@
 | Feature | Status | Priority | Owner | Notes | Dependencies |
 |---------|--------|----------|-------|-------|--------------|
 | Debug Mode Flag | 🟢 | P3 | - | Basic debug mode variable | - |
+| Module-Level CAN Message Testing | ⚪ | P1 | - | Test HIGH_TEMP, VOLTAGE_EXTREMES, AVERAGES message transmission/reception | CAN Driver |
+| CAN Message Encoding/Decoding Tests | ⚪ | P1 | - | Test encode/decode functions with edge cases (min/max values, invalid data) | CAN Frame Generation |
+| CAN Message Validation Tests | ⚪ | P1 | - | Test message validation, error handling, and malformed message rejection | CAN Driver |
+| CAN Message Round-Trip Testing | ⚪ | P1 | - | Test full round-trip: encode → transmit → receive → decode → verify | CAN Driver, Secondary Board |
+| CAN Bus Stress Testing | ⚪ | P2 | - | Test CAN communication under high load with multiple modules | CAN Driver |
+| Cell-Level Message Testing | ⚪ | P1 | - | Test new cell-level message types once implemented | CAN Individual Cell Messages |
 | Unit Tests | ⚪ | P3 | - | Unit tests for data handlers | - |
 | Integration Tests | ⚪ | P2 | - | Hardware-in-the-loop testing | - |
 
@@ -119,6 +129,7 @@
 | UART Fleet Summary Frame | 🟢 | P0 | - | Sends fleet summary to primary | UART Driver |
 | UART Module Summary Frame | 🟢 | P0 | - | Sends individual module data | UART Driver |
 | UART Heartbeat Frame | 🟢 | P0 | - | Periodic heartbeat to primary | UART Driver |
+| UART Cell-Level Data Frame | ⚪ | P1 | - | Type 0x13: Individual cell voltages/temps for a module | UART Driver, CAN Cell-Level Messages |
 | Frame Rotation System | 🟢 | P1 | - | Rotates between frame types to prevent overrun | UART Driver |
 | UART Packet Framing | 🟢 | P0 | - | Proper packet encoding/decoding | UART Driver |
 
@@ -133,6 +144,12 @@
 
 | Feature | Status | Priority | Owner | Notes | Dependencies |
 |---------|--------|----------|-------|-------|--------------|
+| Module-Level Data Function Testing | ⚪ | P1 | - | Comprehensive testing of module data collection, aggregation, and processing | Module Data Collection |
+| Fleet Summary Calculation Testing | ⚪ | P1 | - | Test fleet summary calculations with various module configurations | Fleet Summary Calculation |
+| Online/Offline Detection Testing | ⚪ | P1 | - | Test module online/offline detection logic | Online/Offline Detection |
+| Data Staleness Detection Testing | ⚪ | P1 | - | Test data staleness detection and timeout handling | Data Staleness Detection |
+| UART Frame Reception Testing | ⚪ | P1 | - | Test UART frame reception and parsing for all message types | UART Packet Framing |
+| UART Frame Rotation Testing | ⚪ | P2 | - | Test frame rotation system prevents overrun errors | Frame Rotation System |
 | CAN Message Logging | ⚪ | P3 | - | Log received CAN messages | CAN Driver |
 | UART Transmission Monitoring | ⚪ | P3 | - | Monitor UART transmission success | UART Driver |
 
@@ -215,8 +232,11 @@
 | Feature | Status | Priority | Owner | Notes | Dependencies |
 |---------|--------|----------|-------|-------|--------------|
 | CAN Protocol Standardization | 🟢 | P0 | - | Standardized CAN message format | All Boards |
+| CAN Cell-Level Protocol Design | ⚪ | P1 | - | Design protocol for cell-level data messages | CAN Protocol Standardization |
 | UART Protocol Standardization | 🟢 | P0 | - | Standardized UART packet format | Secondary, Primary |
+| UART Cell-Level Protocol Extension | ⚪ | P1 | - | Extend UART protocol for cell-level data | UART Protocol Standardization |
 | Protocol Documentation | 🟢 | P1 | - | CAN and UART protocol docs | - |
+| Cell-Level Protocol Documentation | ⚪ | P1 | - | Document new cell-level message types | CAN Cell-Level Protocol Design |
 
 ### System Integration
 
@@ -245,7 +265,8 @@
 
 | Issue | Board | Priority | Owner | Description | Status |
 |-------|-------|----------|-------|-------------|--------|
-| - | - | - | - | No known blockers | - |
+| Cell-Level Data Bandwidth | All | P1 | - | Need to evaluate CAN bus bandwidth for cell-level messages (5 cells × 2 messages = 10 messages per module) | Under Review |
+| Module-Level Testing Coverage | Secondary | P1 | - | Existing module-level data functions need comprehensive testing | In Planning |
 
 ---
 
