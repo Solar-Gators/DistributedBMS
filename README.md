@@ -112,9 +112,16 @@ Daugter Board to Secondary Can Messages
 
 ## Documentation
 
+### Technical Documentation
 - [System Architecture](docs/architecture.md)
 - [API Reference](docs/api_reference.md)
 - [Fault Management Guide](docs/fault_management.md)
 - [Data Validation Guide](docs/data_validation.md)
 - [CAN Protocol Specification](docs/can_protocol.md)
+- [UART Protocol Specification](docs/uart_protocol.md)
 - [Build and Deployment Guide](docs/build_guide.md)
+- [Debugging Guide](docs/debugging_guide.md)
+
+### Project Management
+- [Feature Tracking & Assignments](docs/feature_tracking.md) - Track features, tasks, and team assignments
+- [Feature Tracking Guide](docs/feature_tracking_guide.md) - How to use the feature tracking document
