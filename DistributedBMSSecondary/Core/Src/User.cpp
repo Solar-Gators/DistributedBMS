@@ -61,6 +61,7 @@ void StartDefaultTask(void *argument)
         // -----------------------------------------------------------------
         // Send ONE module summary (round-robin)
         // -----------------------------------------------------------------
+        /*
         for (uint8_t i = 0; i < MAX_MODULES; i++) {
             uint8_t idx = (next_module + i) % MAX_MODULES;
 
@@ -75,7 +76,7 @@ void StartDefaultTask(void *argument)
                 break;
             }
         }
-
+		*/
         // -----------------------------------------------------------------
         // UART pacing
         // -----------------------------------------------------------------

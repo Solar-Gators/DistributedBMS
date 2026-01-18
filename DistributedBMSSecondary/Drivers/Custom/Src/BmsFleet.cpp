@@ -7,6 +7,7 @@
 #include <BmsFleet.hpp>
 #include <cstring>
 #include "cmsis_os.h"
+#include "../../../DistributedBMSCommon/Inc/UartCrc16.hpp"
 
 #define stale 2000
 
@@ -212,8 +213,19 @@ size_t BmsFleet::packFleetData(uint8_t* out) const
     uint16_t payload_len = offset - payload_start;
     out[length_offset + 0] = payload_len & 0xFF;
     out[length_offset + 1] = (payload_len >> 8) & 0xFF;
+    out[length_offset + 1] = (payload_len >> 8) & 0xFF;
 
-    return offset; // total UART frame length
+    // ---- Calculate and append CRC-16 ----
+    // CRC covers: [LEN_LOW] [LEN_HIGH] [PAYLOAD...]
+    const uint8_t* crc_data = &out[length_offset];  // Start at length field
+    size_t crc_data_len = 2 + payload_len;  // 2 bytes length + payload
+    uint16_t crc = UartCrc16::calculate(crc_data, crc_data_len);
+    
+    // Append CRC (little-endian)
+    out[offset++] = crc & 0xFF;        // CRC16_LOW
+    out[offset++] = (crc >> 8) & 0xFF; // CRC16_HIGH
+
+    return offset; // total UART frame length (includes CRC)
 }
 
 size_t BmsFleet::packModuleData(uint8_t* out, uint8_t module_idx) const
@@ -276,7 +288,17 @@ size_t BmsFleet::packModuleData(uint8_t* out, uint8_t module_idx) const
     out[length_offset + 0] = payload_len & 0xFF;
     out[length_offset + 1] = (payload_len >> 8) & 0xFF;
 
-    return offset;
+    // ---- Calculate and append CRC-16 ----
+    // CRC covers: [LEN_LOW] [LEN_HIGH] [PAYLOAD...]
+    const uint8_t* crc_data = &out[length_offset];  // Start at length field
+    size_t crc_data_len = 2 + payload_len;  // 2 bytes length + payload
+    uint16_t crc = UartCrc16::calculate(crc_data, crc_data_len);
+    
+    // Append CRC (little-endian)
+    out[offset++] = crc & 0xFF;        // CRC16_LOW
+    out[offset++] = (crc >> 8) & 0xFF; // CRC16_HIGH
+
+    return offset;  // total UART frame length (includes CRC)
 }
 
 

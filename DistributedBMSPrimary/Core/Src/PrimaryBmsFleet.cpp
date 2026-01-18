@@ -89,22 +89,6 @@ bool PrimaryBmsFleet::update_module_summary(const uint8_t* payload,
         return false;
     }
 
-    // ---- Minimum payload length check ----
-    // type (1)
-    // module_idx (1)
-    // high_c_x10 (2)
-    // high_temp_cell (1)
-    // high_mV (2)
-    // low_mV (2)
-    // low_idx (1)
-    // high_idx (1)
-    // avg_c_x10 (2)
-    // avg_cell_mV (2)
-    // num_cells (1)
-    // age_ms (4)
-    constexpr uint16_t MIN_LEN = 22;
-
-
 
     auto get_u8 = [&](uint8_t& v) {
         v = payload[offset++];

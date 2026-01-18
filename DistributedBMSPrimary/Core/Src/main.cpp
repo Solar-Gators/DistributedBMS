@@ -528,16 +528,20 @@ static void MX_UART4_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_UARTEx_SetRxFifoThreshold(&huart4, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  // Use 1/4 threshold (2 bytes) for better buffering - gives more time for callback processing
+  // With 8-entry FIFO, 1/4 = 2 bytes, providing more headroom before interrupt
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart4, UART_RXFIFO_THRESHOLD_1_4) != HAL_OK)
   {
     Error_Handler();
   }
-  if (HAL_UARTEx_DisableFifoMode(&huart4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN UART4_Init 2 */
 
+  /* USER CODE BEGIN UART4_Init 2 */
+  // Enable FIFO mode to provide hardware buffering and prevent overrun errors
+  // The 8-entry FIFO buffers data while CPU processes previous frames
+  if (HAL_UARTEx_EnableFifoMode(&huart4) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END UART4_Init 2 */
 
 }
