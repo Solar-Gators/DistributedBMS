@@ -1,6 +1,6 @@
 # Distributed BMS - Feature Tracking & Assignment
 
-**Last Updated:** 2025-01-XX (Module-level data implementation completed)  
+**Last Updated:** 2026-01-20 (Primary contactor logic, current calibration, and CAN interface implemented)  
 **Project:** Distributed Battery Management System  
 **Purpose:** Track features, tasks, assignments, and progress across all BMS boards
 
@@ -161,25 +161,25 @@
 
 | Feature | Status | Priority | Owner | Notes | Dependencies |
 |---------|--------|----------|-------|-------|--------------|
-| Fleet Data Reception | 🟢 | P0 | - | Receives fleet data from secondary MCU | UART Driver |
-| PrimaryBmsFleet Management | 🟢 | P0 | - | Stores and manages fleet summary data | UART Reception |
-| Contactor Control Logic | 🟡 | P0 | - | Open/close contactors based on battery data | Fleet Data, BmsController |
-| Fault Decision Making | 🟡 | P0 | - | Makes BMS fault decisions (not hardware faults) | Fleet Data |
-| Battery State Machine | ⚪ | P1 | - | Charging, discharging, fault states | Contactor Control |
+| Fleet Data Reception | 🟢 | P0 | - | Receives fleet data from secondary MCU (UART queue, CRC validation) | UART Driver |
+| PrimaryBmsFleet Management | 🟢 | P0 | - | Stores and manages fleet summary data; data staleness detection in place | UART Reception |
+| Contactor Control Logic | 🟢 | P0 | - | Dual main contactor sequencing with staggered close and safety gating in `BmsManager` | Fleet Data, BmsManager |
+| Fault Decision Making | 🟡 | P0 | - | Core voltage/temp/current/data-stale faults implemented in `BmsManager` | Fleet Data |
+| Battery State Machine | 🟡 | P1 | - | INIT/IDLE/OPERATIONAL/FAULT/SHUTDOWN implemented; charge/discharge modes TBD | Contactor Control |
 
 ### Power Management
 
 | Feature | Status | Priority | Owner | Notes | Dependencies |
 |---------|--------|----------|-------|-------|--------------|
-| Fan Speed Control | 🟡 | P1 | - | Control up to 4 battery fans | BTS71040 Driver |
+| Fan Speed Control | 🟡 | P1 | - | Temperature-based PWM control in `BmsManager` (uses fleet highest temp) | BTS71040 Driver |
 | Power Management for Auxiliaries | ⚪ | P2 | - | Power management for solar car auxiliaries | - |
-| Current Monitoring | 🟡 | P1 | - | Monitor pack current via INA226 | INA226 Driver |
+| Current Monitoring | 🟡 | P1 | - | Pack current via ADS1115 with calibrated nonlinear fit; aux current via INA226 | INA226 Driver, ADS1115 Driver |
 
 ### Communication
 
 | Feature | Status | Priority | Owner | Notes | Dependencies |
 |---------|--------|----------|-------|-------|--------------|
-| CAN FD Communication | 🟡 | P0 | - | CAN FD communication with rest of car | FDCAN Driver |
+| CAN FD Communication | 🟡 | P0 | - | Basic FDCAN driver (`CanFdBus`) and BMS CAN interface (heartbeat, pack status, commands) | FDCAN Driver |
 | USB Debug Communication | 🟢 | P2 | - | USB CDC for debugging and data logging | USB Device |
 | UART Reception from Secondary | 🟢 | P0 | - | Receives UART packets from secondary MCU | UART Driver |
 | UART Packet Parsing | 🟢 | P0 | - | Parses different message types | UART Reception |
@@ -188,11 +188,11 @@
 
 | Feature | Status | Priority | Owner | Notes | Dependencies |
 |---------|--------|----------|-------|-------|--------------|
-| BTS71040 Driver | 🟡 | P1 | - | High-side switch driver for fan control | SPI |
-| INA226 Driver | 🟡 | P1 | - | Current/power monitor | I2C |
-| ADS1115 Driver | 🟡 | P2 | - | ADC for additional measurements | I2C |
+| BTS71040 Driver | 🟡 | P1 | - | High-side switch driver for fan control (used by BmsManager fan control) | SPI |
+| INA226 Driver | 🟡 | P1 | - | Current/power monitor (aux current) | I2C |
+| ADS1115 Driver | 🟡 | P2 | - | ADC for pack current measurement and other sensors | I2C |
 | LSM6DSO32 Driver | ⚪ | P3 | - | IMU for vibration/shock detection | SPI |
-| FDCAN Driver | 🟡 | P0 | - | CAN FD driver for car communication | FDCAN HAL |
+| FDCAN Driver | 🟢 | P0 | - | `CanFdBus` implemented with RX FIFO handling, error callbacks, and bus-off recovery | FDCAN HAL |
 | USB CDC Driver | 🟢 | P2 | - | USB communication device class | USB HAL |
 
 ### Safety & Monitoring
