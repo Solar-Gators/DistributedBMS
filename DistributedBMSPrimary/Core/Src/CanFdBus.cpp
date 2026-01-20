@@ -16,16 +16,17 @@ bool CanFdBus::start()
     if (HAL_FDCAN_Start(&h_) != HAL_OK) return false;
 
     // Activate notifications for RX FIFO0, RX FIFO1, bus-off, and errors
+    // BufferIndexes parameter is 0 since we're not using TX completion interrupts
     if (HAL_FDCAN_ActivateNotification(&h_,
         FDCAN_IT_RX_FIFO0_NEW_MESSAGE |
         FDCAN_IT_RX_FIFO1_NEW_MESSAGE |
         FDCAN_IT_BUS_OFF |
         FDCAN_IT_ERROR_WARNING |
         FDCAN_IT_ERROR_PASSIVE |
-        FDCAN_IT_ERROR_BUS_OFF |
         FDCAN_IT_ARB_PROTOCOL_ERROR |
         FDCAN_IT_DATA_PROTOCOL_ERROR |
-        FDCAN_IT_ERROR_LOGGING_OVERFLOW) != HAL_OK) {
+        FDCAN_IT_ERROR_LOGGING_OVERFLOW,
+        0) != HAL_OK) {
         return false;
     }
 
@@ -424,10 +425,10 @@ void CanFdBus::beginRecovery()
         FDCAN_IT_BUS_OFF |
         FDCAN_IT_ERROR_WARNING |
         FDCAN_IT_ERROR_PASSIVE |
-        FDCAN_IT_ERROR_BUS_OFF |
         FDCAN_IT_ARB_PROTOCOL_ERROR |
         FDCAN_IT_DATA_PROTOCOL_ERROR |
-        FDCAN_IT_ERROR_LOGGING_OVERFLOW);
+        FDCAN_IT_ERROR_LOGGING_OVERFLOW,
+        0);  // BufferIndexes = 0 (not using TX completion interrupts)
 
     tx_ok_at_recovery_ = tx_ok_;
     recovery_start_tick_ = HAL_GetTick();

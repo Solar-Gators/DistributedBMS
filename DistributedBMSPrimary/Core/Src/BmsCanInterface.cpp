@@ -216,15 +216,17 @@ BmsCanProtocol::TemperatureMsg BmsCanInterface::createTemperatureMsg()
     const auto& summary = bms_manager_.getFleetSummary();
     
     msg.highest_temp_C_x10 = static_cast<int16_t>(summary.highest_temp_C * 10.0f);
-    msg.lowest_temp_C_x10 = static_cast<int16_t>(summary.lowest_temp_C * 10.0f);
     
-    // Calculate average (simplified - just use highest/lowest average)
-    float avg_temp = (summary.highest_temp_C + summary.lowest_temp_C) / 2.0f;
-    msg.avg_temp_C_x10 = static_cast<int16_t>(avg_temp * 10.0f);
+    // lowest_temp_C not available in FleetSummaryData - use highest_temp_C as placeholder
+    // TODO: Add lowest_temp_C to FleetSummaryData if needed
+    msg.lowest_temp_C_x10 = msg.highest_temp_C_x10;
+    
+    // Average is same as highest since we only have one temperature value
+    msg.avg_temp_C_x10 = msg.highest_temp_C_x10;
     
     msg.highest_temp_idx = summary.highest_temp_idx;
-    msg.lowest_temp_idx = summary.lowest_temp_idx;
-    msg.num_sensors = summary.num_modules;  // Approximate
+    msg.lowest_temp_idx = summary.highest_temp_idx;  // Same as highest since we only have one temp
+    msg.num_sensors = 1;  // Only have highest temp data available
     
     return msg;
 }
@@ -238,9 +240,9 @@ BmsCanProtocol::CellVoltagesMsg BmsCanInterface::createCellVoltagesMsg()
     msg.highest_cell_mV = summary.highest_cell_mV;
     msg.lowest_cell_mV = summary.lowest_cell_mV;
     
-    // Calculate average cell voltage
-    uint16_t avg_cell_mV = summary.total_voltage_mV / summary.num_modules;
-    msg.avg_cell_mV = avg_cell_mV;
+    // Calculate average cell voltage as midpoint between highest and lowest
+    // (num_modules not available in FleetSummaryData)
+    msg.avg_cell_mV = (summary.highest_cell_mV + summary.lowest_cell_mV) / 2;
     
     msg.highest_cell_idx = summary.highest_cell_idx;
     msg.lowest_cell_idx = summary.lowest_cell_idx;
