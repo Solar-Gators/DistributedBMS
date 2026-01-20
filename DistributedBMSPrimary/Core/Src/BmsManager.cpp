@@ -19,6 +19,9 @@ BmsManager::BmsManager(PrimaryBmsFleet* fleet,
     , contactor_gpio_port_(nullptr)
     , contactor_gpio_pin_(0)
     , contactor_gpio_active_high_(true)  // Default: high = closed
+    , second_contactor_gpio_port_(nullptr)
+    , second_contactor_gpio_pin_(0)
+    , second_contactor_gpio_active_high_(true)
     , fan_pwm_tim_(nullptr)
     , fan_pwm_channel_(0)
     , fan_pwm_initialized_(false)
@@ -33,6 +36,8 @@ BmsManager::BmsManager(PrimaryBmsFleet* fleet,
     , contactors_closed_(false)
     , contactor_close_request_(false)
     , contactor_open_request_(false)
+    , contactor_stage_start_time_ms_(0)
+    , contactor_stage_active_(false)
     , fan_speed_percent_(0)
 {
     // Config already initialized with defaults in struct
@@ -226,6 +231,12 @@ void BmsManager::setContactorGpio(GPIO_TypeDef* port, uint16_t pin)
     contactor_gpio_pin_ = pin;
 }
 
+void BmsManager::setSecondContactorGpio(GPIO_TypeDef* port, uint16_t pin)
+{
+    second_contactor_gpio_port_ = port;
+    second_contactor_gpio_pin_ = pin;
+}
+
 void BmsManager::setFanPwmTimer(TIM_HandleTypeDef* htim, uint32_t channel)
 {
     fan_pwm_tim_ = htim;
@@ -372,20 +383,54 @@ void BmsManager::updateStateMachine(uint32_t now_ms)
 
 void BmsManager::updateContactors(uint32_t now_ms)
 {
-    (void)now_ms;  // Unused for now
+    // Default: contactors should be open unless in OPERATIONAL state
+    bool target_closed = (state_ == BmsState::OPERATIONAL);
 
-    bool should_be_closed = false;
-
-    if (state_ == BmsState::OPERATIONAL) {
-        should_be_closed = true;
-    } else {
-        should_be_closed = false;
+    // If we are not in OPERATIONAL (or we have an explicit open request),
+    // force everything open and reset sequencing state.
+    if (!target_closed || contactor_open_request_ || active_faults_ != 0) {
+        setContactorGpioState(false);
+        setSecondContactorGpioState(false);
+        contactors_closed_ = false;
+        contactor_stage_active_ = false;
+        contactor_stage_start_time_ms_ = 0;
+        return;
     }
 
-    // Update contactor state if changed
-    if (should_be_closed != contactors_closed_) {
-        setContactorGpioState(should_be_closed);
-        contactors_closed_ = should_be_closed;
+    // At this point, we want contactors closed and we're in OPERATIONAL state.
+    // If already closed, nothing to do.
+    if (contactors_closed_) {
+        return;
+    }
+
+    // If only one contactor GPIO is configured, close it immediately.
+    if (second_contactor_gpio_port_ == nullptr) {
+        setContactorGpioState(true);
+        contactors_closed_ = true;
+        return;
+    }
+
+    // Two-main-contactor sequencing (e.g. negative then positive):
+    // 1) Close first contactor (contactor_gpio_*).
+    // 2) After contactor_stagger_delay_ms, close second contactor and keep both closed.
+
+    if (!contactor_stage_active_) {
+        // Start stage 1: close first contactor
+        setContactorGpioState(true);
+        contactor_stage_active_ = true;
+        contactor_stage_start_time_ms_ = now_ms;
+        return;
+    }
+
+    // Stage already active - check if delay has elapsed
+    uint32_t elapsed = now_ms - contactor_stage_start_time_ms_;
+    if (elapsed >= config_.contactor_stagger_delay_ms) {
+        // Close second contactor; both remain closed
+        setSecondContactorGpioState(true);
+        contactors_closed_ = true;
+
+        contactor_stage_active_ = false;
+        contactor_stage_start_time_ms_ = 0;
     }
 }
 
@@ -600,6 +645,22 @@ void BmsManager::setContactorGpioState(bool closed)
     }
 
     HAL_GPIO_WritePin(contactor_gpio_port_, contactor_gpio_pin_, pin_state);
+}
+
+void BmsManager::setSecondContactorGpioState(bool closed)
+{
+    if (second_contactor_gpio_port_ == nullptr) {
+        return;
+    }
+
+    GPIO_PinState pin_state;
+    if (second_contactor_gpio_active_high_) {
+        pin_state = closed ? GPIO_PIN_SET : GPIO_PIN_RESET;
+    } else {
+        pin_state = closed ? GPIO_PIN_RESET : GPIO_PIN_SET;
+    }
+
+    HAL_GPIO_WritePin(second_contactor_gpio_port_, second_contactor_gpio_pin_, pin_state);
 }
 
 void BmsManager::setFanPwmDuty(uint8_t percent)

@@ -84,6 +84,10 @@ public:
         // Fan control
         float fan_on_temp_C = 30.0f;
         float fan_max_temp_C = 40.0f;
+
+        // Contactor sequencing
+        // Delay between first and second main contactor closing (to limit inrush on coil supply)
+        uint32_t contactor_stagger_delay_ms = 50;
     };
 
     // ========== Initialization ==========
@@ -124,7 +128,8 @@ public:
     float getStateOfCharge() const;  // 0-100% (if implemented, currently returns 0)
 
     // ========== Hardware Control ==========
-    void setContactorGpio(GPIO_TypeDef* port, uint16_t pin);  // Set GPIO for contactor control
+    void setContactorGpio(GPIO_TypeDef* port, uint16_t pin);              // First main contactor (e.g. negative side)
+    void setSecondContactorGpio(GPIO_TypeDef* port, uint16_t pin);        // Second main contactor (e.g. positive side)
     void setFanPwmTimer(TIM_HandleTypeDef* htim, uint32_t channel);  // Set PWM timer for fans
 
     // ========== Configuration ==========
@@ -158,7 +163,8 @@ private:
     float convertAdcToCurrent(float adc_voltage_V);  // Convert ADS1115 reading to current
 
     // Hardware control helpers
-    void setContactorGpioState(bool closed);  // Set GPIO pin for contactor
+    void setContactorGpioState(bool closed);      // Set GPIO pin for first main contactor
+    void setSecondContactorGpioState(bool closed);// Set GPIO pin for second main contactor
     void setFanPwmDuty(uint8_t percent);     // Set PWM duty cycle (0-100%)
 
     // Safety checks
@@ -174,6 +180,9 @@ private:
     GPIO_TypeDef* contactor_gpio_port_;
     uint16_t contactor_gpio_pin_;
     bool contactor_gpio_active_high_;  // true if GPIO high = contactor closed
+    GPIO_TypeDef* second_contactor_gpio_port_;
+    uint16_t second_contactor_gpio_pin_;
+    bool second_contactor_gpio_active_high_;
     TIM_HandleTypeDef* fan_pwm_tim_;
     uint32_t fan_pwm_channel_;
     bool fan_pwm_initialized_;
@@ -196,6 +205,8 @@ private:
     bool contactors_closed_;
     bool contactor_close_request_;
     bool contactor_open_request_;
+    uint32_t contactor_stage_start_time_ms_;
+    bool contactor_stage_active_;
 
     // Fan control
     uint8_t fan_speed_percent_;  // 0-100% PWM duty cycle

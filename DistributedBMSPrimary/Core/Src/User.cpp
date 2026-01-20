@@ -14,6 +14,8 @@
 #include "lsm6dso32.hpp"
 #include "ina226.hpp"
 #include "ads1115.hpp"
+#include "CanFdBus.hpp"
+#include "BmsCanInterface.hpp"
 
 
 // Shared utilities
@@ -50,6 +52,10 @@ static PrimaryBmsFleet fleet;
 
 // High-level BMS manager
 static BmsManager* bms_manager = nullptr;
+
+// CAN bus and interface
+static CanFdBus* can_bus = nullptr;
+static BmsCanInterface* can_interface = nullptr;
 
 // UART buffers
 static uint8_t rxbuf[128];
@@ -274,8 +280,11 @@ void setup()
     bms_manager = new BmsManager(&fleet, &adc, ina);
 
     // Configure hardware interfaces
-    // TODO: Set actual GPIO port and pin for contactors
-    // bms_manager->setContactorGpio(CONTACTOR_GPIO_Port, CONTACTOR_Pin);
+    // Configure two main contactors on port B:
+    //  - PB0: first main contactor (e.g. negative side)
+    //  - PB1: second main contactor (e.g. positive side)
+    bms_manager->setContactorGpio(GPIOB, GPIO_PIN_0);
+    bms_manager->setSecondContactorGpio(GPIOB, GPIO_PIN_1);
     
     // TODO: Set actual PWM timer and channel for fans
     // bms_manager->setFanPwmTimer(&htim1, TIM_CHANNEL_1);
@@ -295,6 +304,28 @@ void setup()
 
     // Initialize BMS Manager
     bms_manager->init();
+
+    // Initialize CAN bus
+    can_bus = new CanFdBus(hfdcan1);
+    can_bus->configureFilterAcceptAll(0);  // Accept all messages for now
+    if (!can_bus->start()) {
+        // CAN initialization failed - handle error
+        while (1) {}
+    }
+
+    // Initialize CAN interface
+    can_interface = new BmsCanInterface(*can_bus, *bms_manager);
+    BmsCanInterface::Config can_config;
+    can_config.heartbeat_period_ms = 100;   // 10 Hz heartbeat
+    can_config.pack_status_period_ms = 50;  // 20 Hz pack status
+    can_config.node_id = 0x01;
+    can_interface->init(can_config);
+
+    // Allow sensors and measurements to settle before attempting to close contactors
+    HAL_Delay(2000);
+
+    // Request contactors to close; BmsManager will sequence both contactors
+    bms_manager->requestContactorsClose();
 }
 
 // Main loop function
@@ -319,6 +350,16 @@ void loop()
         bms_manager->update(now_ms);
     }
 
+    // Update CAN bus (handles bus-off recovery)
+    if (can_bus != nullptr) {
+        can_bus->poll();
+    }
+
+    // Update CAN interface (sends periodic messages, processes commands)
+    if (can_interface != nullptr) {
+        can_interface->update(now_ms);
+    }
+
     // Legacy code - keeping for now during migration
     // TODO: Remove once BmsManager is fully tested
     LSM6DSO32::ScaledData d;
@@ -338,7 +379,7 @@ void loop()
         uint16_t faults = bms_manager->getActiveFaults();
         BmsManager::BmsState state = bms_manager->getState();
 
-        // Update LEDs based on state and faults
+        // Update LEDs on GPIOC based on state and faults
         if (state == BmsManager::BmsState::SHUTDOWN || bms_manager->hasCriticalFault()) {
             // Critical fault - all LEDs off or error pattern
             HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
@@ -352,8 +393,8 @@ void loop()
             HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
             HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
         } else {
-            // IDLE state - maybe blink or different pattern
-            HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);
+            // IDLE state - heartbeat blink on LED0
+            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
         }
     }
 
@@ -370,8 +411,6 @@ void loop()
 	//float intermediate = ((result-0.07)*1.5);
 	//float finalCurrent = (intermediate-2.5)/0.04;
 
-    // OK LED toggle (heartbeat)
-    bms_manager->requestContactorsClose();
-    HAL_Delay(50);
+    // OK LED toggle (handled above using GPIOC)
 }
 
