@@ -398,19 +398,6 @@ void loop()
         }
     }
 
-	float result;
-	adc.readSingleEnded(0, result);
-
-
-
-	float y = 101.4864f
-        + (-29.84563f - 101.4864f)
-          / (1.0f + std::pow(result / 2.756892f, 2.643521f));
-
-
-	//float intermediate = ((result-0.07)*1.5);
-	//float finalCurrent = (intermediate-2.5)/0.04;
-
     // OK LED toggle (handled above using GPIOC)
 }
 

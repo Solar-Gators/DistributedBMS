@@ -623,11 +623,25 @@ bool BmsManager::checkDataStale(uint32_t now_ms)
 // ========== Private: Current Measurement ==========
 float BmsManager::convertAdcToCurrent(float adc_voltage_V)
 {
-    // Convert ADC voltage to current
-    // Formula: I = (V_adc - V_offset) / (R_shunt * Gain)
-    float voltage = adc_voltage_V - config_.current_offset_V;
-    float current = voltage / (config_.current_shunt_resistance_ohm * config_.current_gain);
-    return current;
+    // Nonlinear calibration of battery current based on ADS1115 voltage reading.
+    // This uses the empirically derived curve from the User.cpp test code:
+    //   y = 101.4864 + (-29.84563 - 101.4864) / (1 + (x / 2.756892) ^ 2.643521)
+    // where:
+    //   x = ADC voltage (V)
+    //   y = battery current (A)
+    //
+    // Note: config_.current_* fields are currently unused by this fit.
+
+    const float a = 101.4864f;
+    const float b = -29.84563f;
+    const float c = 2.756892f;
+    const float d = 2.643521f;
+
+    float x = adc_voltage_V;
+    float denom = 1.0f + std::pow(x / c, d);
+    float y = a + (b - a) / denom;
+
+    return y;
 }
 
 // ========== Private: Hardware Control ==========
