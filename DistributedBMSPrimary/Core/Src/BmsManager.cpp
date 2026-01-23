@@ -38,6 +38,7 @@ BmsManager::BmsManager(PrimaryBmsFleet* fleet,
     , contactor_open_request_(false)
     , contactor_stage_start_time_ms_(0)
     , contactor_stage_active_(false)
+    , contactor_close_time_ms_(0)
     , fan_speed_percent_(0)
 {
     // Config already initialized with defaults in struct
@@ -249,6 +250,19 @@ void BmsManager::setConfig(const Config& config)
     config_ = config;
 }
 
+// ========== Debug Mode ==========
+void BmsManager::setDebugMode(bool enabled, bool force_contactors, bool disable_faults)
+{
+    config_.debug_mode.enabled = enabled;
+    config_.debug_mode.force_contactors_closed = force_contactors;
+    config_.debug_mode.disable_fault_detection = disable_faults;
+}
+
+bool BmsManager::isDebugModeEnabled() const
+{
+    return config_.debug_mode.enabled;
+}
+
 const BmsManager::Config& BmsManager::getConfig() const
 {
     return config_;
@@ -281,6 +295,12 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
 
 void BmsManager::updateFaults(uint32_t now_ms)
 {
+    // Skip fault detection if debug mode disables it
+    if (config_.debug_mode.enabled && config_.debug_mode.disable_fault_detection) {
+        active_faults_ = 0;
+        return;
+    }
+
     uint16_t new_faults = 0;
 
     // Check each fault condition
@@ -383,17 +403,44 @@ void BmsManager::updateStateMachine(uint32_t now_ms)
 
 void BmsManager::updateContactors(uint32_t now_ms)
 {
+    // Debug mode: Force contactors closed (bypasses all safety checks)
+    if (config_.debug_mode.enabled && config_.debug_mode.force_contactors_closed) {
+        if (!contactors_closed_) {
+            // Close both contactors immediately (no sequencing in debug mode)
+            if (contactor_gpio_port_ != nullptr) {
+                setContactorGpioState(true);
+            }
+            if (second_contactor_gpio_port_ != nullptr) {
+                setSecondContactorGpioState(true);
+            } else if (contactor_gpio_port_ != nullptr) {
+                // Only one contactor configured
+            }
+            contactors_closed_ = true;
+            contactor_close_time_ms_ = now_ms;
+            contactor_stage_active_ = false;
+            contactor_stage_start_time_ms_ = 0;
+        }
+        return;  // Debug mode bypasses all normal logic
+    }
+
     // Default: contactors should be open unless in OPERATIONAL state
     bool target_closed = (state_ == BmsState::OPERATIONAL);
 
+    // Calculate time since contactors were closed (for grace period)
+    uint32_t time_since_close = contactors_closed_ ? (now_ms - contactor_close_time_ms_) : UINT32_MAX;
+    bool in_grace_period = (time_since_close < config_.contactor_close_grace_period_ms);
+
     // If we are not in OPERATIONAL (or we have an explicit open request),
     // force everything open and reset sequencing state.
-    if (!target_closed || contactor_open_request_ || active_faults_ != 0) {
+    // Allow grace period after closing to prevent immediate reopening due to inrush/transients
+    if (!target_closed || contactor_open_request_ || 
+        (active_faults_ != 0 && !in_grace_period)) {
         setContactorGpioState(false);
         setSecondContactorGpioState(false);
         contactors_closed_ = false;
         contactor_stage_active_ = false;
         contactor_stage_start_time_ms_ = 0;
+        contactor_close_time_ms_ = 0;
         return;
     }
 
@@ -407,6 +454,7 @@ void BmsManager::updateContactors(uint32_t now_ms)
     if (second_contactor_gpio_port_ == nullptr) {
         setContactorGpioState(true);
         contactors_closed_ = true;
+        contactor_close_time_ms_ = now_ms;  // Record when contactors were closed
         return;
     }
 
@@ -428,6 +476,7 @@ void BmsManager::updateContactors(uint32_t now_ms)
         // Close second contactor; both remain closed
         setSecondContactorGpioState(true);
         contactors_closed_ = true;
+        contactor_close_time_ms_ = now_ms;  // Record when contactors were fully closed
 
         contactor_stage_active_ = false;
         contactor_stage_start_time_ms_ = 0;
@@ -637,6 +686,8 @@ float BmsManager::convertAdcToCurrent(float adc_voltage_V)
     const float c = 2.756892f;
     const float d = 2.643521f;
 
+
+
     float x = adc_voltage_V;
     float denom = 1.0f + std::pow(x / c, d);
     float y = a + (b - a) / denom;
@@ -648,7 +699,7 @@ float BmsManager::convertAdcToCurrent(float adc_voltage_V)
 void BmsManager::setContactorGpioState(bool closed)
 {
     if (contactor_gpio_port_ == nullptr) {
-        return;
+        return;  // GPIO not configured
     }
 
     GPIO_PinState pin_state;

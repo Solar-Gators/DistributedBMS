@@ -57,6 +57,7 @@ static BmsManager* bms_manager = nullptr;
 static CanFdBus* can_bus = nullptr;
 static BmsCanInterface* can_interface = nullptr;
 
+
 // UART buffers
 static uint8_t rxbuf[128];
 // Note: tempBuf and rx_size removed - no longer needed with queue-based processing
@@ -268,7 +269,7 @@ void setup()
     // Create and initialize current monitor
     ina = new INA226(&hi2c2, 0x40);
     // 2 mΩ shunt, max expected 100 A
-    if (ina->init(0.002f, 100.0f) != HAL_OK) {
+    if (ina->init(0.02f, 100.0f) != HAL_OK) {
         // handle error (blink LED, etc.)
         while (1) {}
     }
@@ -295,12 +296,18 @@ void setup()
     config.cell_undervoltage_mV = 2500;
     config.overtemp_C = 45.0f;
     config.overcurrent_A = 100.0f;
-    config.aux_overcurrent_A = 20.0f;
+    config.aux_overcurrent_A = 50.0f;
     // Current measurement calibration - adjust based on your hardware
     config.current_shunt_resistance_ohm = 0.001f;  // 1mΩ shunt (adjust as needed)
     config.current_gain = 50.0f;  // Current sense amplifier gain (adjust as needed)
     config.current_offset_V = 0.0f;  // ADC offset (calibrate as needed)
     bms_manager->setConfig(config);
+
+    // Debug mode (WARNING: Disables safety features - for testing only!)
+    // Uncomment to enable:
+    // bms_manager->setDebugMode(true, true, true);  // Enable debug, force contactors closed, disable faults
+    // bms_manager->setDebugMode(true, false, true); // Enable debug, disable faults only
+    // bms_manager->setDebugMode(true, true, false); // Enable debug, force contactors only
 
     // Initialize BMS Manager
     bms_manager->init();
@@ -321,11 +328,9 @@ void setup()
     can_config.node_id = 0x01;
     can_interface->init(can_config);
 
-    // Allow sensors and measurements to settle before attempting to close contactors
+    //bms_manager->setDebugMode(true,true,true);
+    // Allow sensors and measurements to settle before entering main loop
     HAL_Delay(2000);
-
-    // Request contactors to close; BmsManager will sequence both contactors
-    bms_manager->requestContactorsClose();
 }
 
 // Main loop function
@@ -348,6 +353,7 @@ void loop()
     // Update BMS Manager (handles fault detection, state machine, control)
     if (bms_manager != nullptr) {
         bms_manager->update(now_ms);
+
     }
 
     // Update CAN bus (handles bus-off recovery)
@@ -395,6 +401,7 @@ void loop()
         } else {
             // IDLE state - heartbeat blink on LED0
             HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
+            bms_manager->requestContactorsClose();
         }
     }
 

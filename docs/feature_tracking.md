@@ -10,10 +10,10 @@
 
 ### Status
 - 🟢 **Completed** - Feature is fully implemented and tested
+- 🟣 **Review** - Needs code review or testing
 - 🟡 **In Progress** - Currently being worked on
 - 🔴 **Blocked** - Waiting on dependencies or external factors
 - ⚪ **TODO** - Not yet started
-- 🟣 **Review** - Needs code review or testing
 
 ### Priority
 - **P0** - Critical (blocks other work)
@@ -27,78 +27,68 @@
 
 ### Core Functionality
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| BQ76920 Initialization | 🟢 | P0 | - | Basic init with retry logic implemented | - |
-| Cell Voltage Reading | 🟢 | P0 | - | Reading via I2C, validation implemented | BQ76920 Init |
-| Temperature Reading (NTC) | 🟢 | P0 | - | ADC DMA reading implemented | ADC Init |
-| CAN Communication | 🟢 | P0 | - | CAN driver with callback system | CAN Init |
-| FreeRTOS Task Management | 🟢 | P0 | - | Two tasks: data collection & CAN transmission | - |
-| Mutex Protection | 🟢 | P1 | - | BMS data mutex for thread safety | FreeRTOS |
+| Feature                   | Status | Priority | Owner          | Notes                                         | Dependencies |
+| ------------------------- | ------ | -------- | -------------- | --------------------------------------------- | ------------ |
+| BQ76920 Initialization    | 🟢     | P0       | Samuel Breslin | Basic init with retry logic implemented       | -            |
+| Cell Voltage Reading      | 🟢     | P0       | Samuel Breslin | Reading via I2C, validation implemented       | BQ76920 Init |
+| Temperature Reading (NTC) | 🟢     | P0       | Samuel Breslin | ADC DMA reading implemented                   | ADC Init     |
+| CAN Communication         | 🟢     | P0       | Samuel Breslin | CAN driver with callback system               | CAN Init     |
+| FreeRTOS Task Management  | 🟢     | P0       | Samuel Breslin | Two tasks: data collection & CAN transmission | -            |
+| Mutex Protection          | 🟢     | P1       | Samuel Breslin | BMS data mutex for thread safety              | FreeRTOS     |
 
 ### Data Processing
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| BMS Core Processing | 🟢 | P0 | - | Cell voltage/temp stats calculation | - |
-| Data Validation | 🟢 | P1 | - | Cell voltage and ADC validation | - |
-| Fault Management | 🟢 | P1 | - | Hardware fault tracking system | - |
-| CAN Frame Generation | 🟢 | P0 | - | Average stats, voltage extremes, high temp frames | BMS Core |
+| Feature              | Status | Priority | Owner          | Notes                                             | Dependencies |
+| -------------------- | ------ | -------- | -------------- | ------------------------------------------------- | ------------ |
+| BMS Core Processing  | 🟢     | P0       | Samuel Breslin | Cell voltage/temp stats calculation               | -            |
+| Data Validation      | 🟢     | P1       | Samuel Breslin | Cell voltage and ADC validation                   | -            |
+| Fault Management     | 🟢     | P1       | Samuel Breslin | Hardware fault tracking system                    | -            |
+| CAN Frame Generation | 🟢     | P0       | Samuel Breslin | Average stats, voltage extremes, high temp frames | BMS Core     |
 
 ### Communication
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| CAN Average Stats Frame | 🟢 | P0 | - | Type 2: avg temp, avg voltage, cell count | CAN Driver |
-| CAN Voltage Extremes Frame | 🟢 | P0 | - | Type 1: min/max voltages with indices | CAN Driver |
-| CAN High Temp Frame | 🟢 | P0 | - | Type 0: highest temperature with index | CAN Driver |
-| CAN Individual Cell Voltages | ⚪ | P1 | - | Type 3: All individual cell voltages (may need multiple frames) | CAN Driver, BMS Core |
-| CAN Individual Cell Temperatures | ⚪ | P1 | - | Type 4: All individual cell temperatures (may need multiple frames) | CAN Driver, BMS Core |
-| CAN Cell Voltage Frame (Single) | ⚪ | P2 | - | Type 5: Single cell voltage with index | CAN Driver |
-| CAN Cell Temperature Frame (Single) | ⚪ | P2 | - | Type 6: Single cell temperature with index | CAN Driver |
-| CAN Fault Reporting | 🟡 | P1 | - | Send fault mask over CAN | Fault Manager |
-| CAN Heartbeat | ⚪ | P2 | - | Periodic heartbeat message | CAN Driver |
+| Feature                          | Status | Priority | Owner          | Notes                                                               | Dependencies         |
+| -------------------------------- | ------ | -------- | -------------- | ------------------------------------------------------------------- | -------------------- |
+| CAN Average Stats Frame          | 🟢     | P0       | Samuel Breslin | Type 2: avg temp, avg voltage, cell count                           | CAN Driver           |
+| CAN Voltage Extremes Frame       | 🟢     | P0       | Samuel Breslin | Type 1: min/max voltages with indices                               | CAN Driver           |
+| CAN High Temp Frame              | 🟢     | P0       | Samuel Breslin | Type 0: highest temperature with index                              | CAN Driver           |
+| CAN Individual Cell Voltages     | ⚪      | P1       | Ahmed Kamel    | Type 3: All individual cell voltages (may need multiple frames)     | CAN Driver, BMS Core |
+| CAN Individual Cell Temperatures | ⚪      | P1       | Ahmed Kamel    | Type 4: All individual cell temperatures (may need multiple frames) | CAN Driver, BMS Core |
+| CAN Fault Reporting              | 🟡     | P1       | Ahmed Kamel    | Send fault mask over CAN                                            | Fault Manager        |
 
 ### Hardware Drivers
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| BQ7692000PW Driver | 🟢 | P0 | - | Full driver with calibration support | I2C |
-| CAN Driver (CANDevice) | 🟢 | P0 | - | CMSIS-RTOS2 driven CAN/FDCAN driver | CAN HAL |
-| ADC DMA Driver | 🟢 | P0 | - | Multi-channel ADC with DMA | ADC HAL |
+| Feature                | Status | Priority | Owner          | Notes                                | Dependencies |
+| ---------------------- | ------ | -------- | -------------- | ------------------------------------ | ------------ |
+| BQ7692000PW Driver     | 🟢     | P0       | Jonathon Brown | Full driver with calibration support | I2C          |
+| CAN Driver (CANDevice) | 🟢     | P0       | Samuel Breslin | CMSIS-RTOS2 driven CAN/FDCAN driver  | CAN HAL      |
+| ADC DMA Driver         | 🟢     | P0       | Samuel Breslin | Multi-channel ADC with DMA           | ADC HAL      |
 
 ### Fault Management
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| BQ76920 Comm Error Detection | 🟢 | P1 | - | I2C communication monitoring | BQ76920 Driver |
-| CAN Transmit Error Detection | 🟢 | P1 | - | CAN transmission failure tracking | CAN Driver |
-| ADC Result Error Detection | 🟢 | P1 | - | ADC reading validation | Data Validator |
-| BQ76920 Result Error Detection | 🟢 | P1 | - | Voltage reading validation | Data Validator |
-| Fault LED Indication | 🟢 | P2 | - | GPIO fault pin control | GPIO |
-| OK LED Indication | 🟢 | P2 | - | GPIO OK pin toggle on no faults | GPIO |
+| Feature                        | Status | Priority | Owner          | Notes                             | Dependencies   |
+| ------------------------------ | ------ | -------- | -------------- | --------------------------------- | -------------- |
+| BQ76920 Comm Error Detection   | 🟢     | P1       | Samuel Bresli  | I2C communication monitoring      | BQ76920 Driver |
+| CAN Transmit Error Detection   | 🟢     | P1       | Samuel Breslin | CAN transmission failure tracking | CAN Driver     |
+| ADC Result Error Detection     | 🟢     | P1       | Samuel Breslin | ADC reading validation            | Data Validator |
+| BQ76920 Result Error Detection | 🟢     | P1       | Samuel Breslin | Voltage reading validation        | Data Validator |
+| Fault LED Indication           | 🟢     | P2       | Samuel Breslin | GPIO fault pin control            | GPIO           |
+| OK LED Indication              | 🟢     | P2       | Samuel Breslin | GPIO OK pin toggle on no faults   | GPIO           |
 
 ### Configuration & Calibration
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| Device Configuration | 🟢 | P1 | - | Cell count, cycle time, CAN ID config | - |
-| BQ76920 Calibration Reading | 🟢 | P2 | - | ADC gain/offset reading | BQ76920 Driver |
-| Temperature Calibration | ⚪ | P2 | - | NTC thermistor calibration | - |
+| Feature                     | Status | Priority | Owner          | Notes                                 | Dependencies   |
+| --------------------------- | ------ | -------- | -------------- | ------------------------------------- | -------------- |
+| Device Configuration        | 🟢     | P1       | Samuel Breslin | Cell count, cycle time, CAN ID config | -              |
+| BQ76920 Calibration Reading | 🟢     | P2       | Samuel Breslin | ADC gain/offset reading               | BQ76920 Driver |
+| Temperature Calibration     | ⚪      | P2       | Ahmed Kamel    | NTC thermistor calibration            | -              |
 
 ### Testing & Debugging
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| Debug Mode Flag | 🟢 | P3 | - | Basic debug mode variable | - |
-| Module-Level CAN Message Testing | 🟢 | P1 | - | Test HIGH_TEMP, VOLTAGE_EXTREMES, AVERAGES message transmission/reception | CAN Driver |
-| CAN Message Encoding/Decoding Tests | 🟢 | P1 | - | Test encode/decode functions with edge cases (min/max values, invalid data) | CAN Frame Generation |
-| CAN Message Validation Tests | 🟢 | P1 | - | Test message validation, error handling, and malformed message rejection | CAN Driver |
-| CAN Message Round-Trip Testing | 🟢 | P1 | - | Test full round-trip: encode → transmit → receive → decode → verify | CAN Driver, Secondary Board |
-| CAN Bus Stress Testing | ⚪ | P2 | - | Test CAN communication under high load with multiple modules | CAN Driver |
-| Cell-Level Message Testing | ⚪ | P1 | - | Test new cell-level message types once implemented | CAN Individual Cell Messages |
-| Unit Tests | ⚪ | P3 | - | Unit tests for data handlers | - |
-| Integration Tests | ⚪ | P2 | - | Hardware-in-the-loop testing | - |
+| Feature                | Status | Priority | Owner          | Notes                                                        | Dependencies |
+| ---------------------- | ------ | -------- | -------------- | ------------------------------------------------------------ | ------------ |
+| CAN Bus Stress Testing | ⚪      | P2       | Samuel Breslin | Test CAN communication under high load with multiple modules | CAN Driver   |
+| 72 hour testing        | ⚪      | P2       | Samuel Breslin | Can the System run for 72 hours continuously                 | -            |
 
 ---
 
@@ -106,52 +96,49 @@
 
 ### Core Functionality
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| CAN Reception from Daughters | 🟢 | P0 | - | Receives CAN frames from daughter boards | CAN Driver |
-| Fleet Management | 🟢 | P0 | - | Tracks multiple daughter board modules | - |
-| UART Communication to Primary | 🟢 | P0 | - | Sends aggregated data to primary MCU | UART Driver |
-| FreeRTOS Task Management | 🟢 | P0 | - | Multiple tasks for CAN and UART | - |
+| Feature                       | Status | Priority | Owner          | Notes                                    | Dependencies |
+| ----------------------------- | ------ | -------- | -------------- | ---------------------------------------- | ------------ |
+| CAN Reception from Daughters  | 🟢     | P0       | Samuel Breslin | Receives CAN frames from daughter boards | CAN Driver   |
+| Fleet Management              | 🟢     | P0       | Samuel Breslin | Tracks multiple daughter board modules   | -            |
+| UART Communication to Primary | 🟢     | P0       | Samuel Breslin | Sends aggregated data to primary MCU     | UART Driver  |
+| FreeRTOS Task Management      | 🟢     | P0       | Samuel Breslin | Multiple tasks for CAN and UART          | -            |
 
 ### Data Aggregation
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| Module Data Collection | 🟢 | P0 | - | Collects data from each daughter board | CAN Reception |
-| Fleet Summary Calculation | 🟢 | P0 | - | Calculates fleet-wide statistics | Module Data |
-| Online/Offline Detection | 🟢 | P1 | - | Tracks which modules are online | CAN Reception |
-| Data Staleness Detection | 🟢 | P1 | - | Detects stale data from modules | Timestamp Tracking |
+| Feature                   | Status | Priority | Owner          | Notes                                  | Dependencies       |
+| ------------------------- | ------ | -------- | -------------- | -------------------------------------- | ------------------ |
+| Module Data Collection    | 🟢     | P0       | Samuel Breslin | Collects data from each daughter board | CAN Reception      |
+| Fleet Summary Calculation | 🟢     | P0       | Samuel Brelin  | Calculates fleet-wide statistics       | Module Data        |
+| Online/Offline Detection  | 🟢     | P1       | Samuel Breslin | Tracks which modules are online        | CAN Reception      |
+| Data Staleness Detection  | 🟢     | P1       | Samuel Breslin | Detects stale data from modules        | Timestamp Tracking |
 
-### Communication
+### UART Communication
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| UART Fleet Summary Frame | 🟢 | P0 | - | Sends fleet summary to primary | UART Driver |
-| UART Module Summary Frame | 🟢 | P0 | - | Sends individual module data | UART Driver |
-| UART Heartbeat Frame | 🟢 | P0 | - | Periodic heartbeat to primary | UART Driver |
-| UART Cell-Level Data Frame | ⚪ | P1 | - | Type 0x13: Individual cell voltages/temps for a module | UART Driver, CAN Cell-Level Messages |
-| Frame Rotation System | 🟢 | P1 | - | Rotates between frame types to prevent overrun | UART Driver |
-| UART Packet Framing | 🟢 | P0 | - | Proper packet encoding/decoding | UART Driver |
+| Feature                    | Status | Priority | Owner          | Notes                                                  | Dependencies                         |
+| -------------------------- | ------ | -------- | -------------- | ------------------------------------------------------ | ------------------------------------ |
+| UART Fleet Summary Frame   | 🟢     | P0       | Samuel Breslin | Sends fleet summary to primary                         | UART Driver                          |
+| UART Module Summary Frame  | 🟢     | P0       | Samuel Breslin | Sends individual module data                           | UART Driver                          |
+| UART Heartbeat Frame       | 🟢     | P0       | Samuel Breslin | Periodic heartbeat to primary                          | UART Driver                          |
+| UART Cell-Level Data Frame | ⚪      | P1       | Ahmed Kamel    | Type 0x13: Individual cell voltages/temps for a module | UART Driver, CAN Cell-Level Messages |
+| Frame Rotation System      | 🟢     | P1       | Samuel Breslin | Rotates between frame types to prevent overrun         | UART Driver                          |
+| UART Packet Framing        | 🟢     | P0       | Samuel Breslin | Proper packet encoding/decoding                        | UART Driver                          |
 
 ### Hardware Drivers
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| CAN Driver | 🟢 | P0 | - | CAN reception from daughter boards | CAN HAL |
-| UART Driver | 🟢 | P0 | - | UART transmission to primary MCU | UART HAL |
+| Feature     | Status | Priority | Owner          | Notes                              | Dependencies |
+| ----------- | ------ | -------- | -------------- | ---------------------------------- | ------------ |
+| CAN Driver  | 🟢     | P0       | Samuel Breslin | CAN reception from daughter boards | CAN HAL      |
+| UART Driver | 🟢     | P0       | Samuel Breslin | UART transmission to primary MCU   | UART HAL     |
 
 ### Testing & Debugging
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| Module-Level Data Function Testing | 🟢 | P1 | - | Comprehensive testing of module data collection, aggregation, and processing | Module Data Collection |
-| Fleet Summary Calculation Testing | 🟢 | P1 | - | Test fleet summary calculations with various module configurations | Fleet Summary Calculation |
-| Online/Offline Detection Testing | 🟢 | P1 | - | Test module online/offline detection logic | Online/Offline Detection |
-| Data Staleness Detection Testing | 🟢 | P1 | - | Test data staleness detection and timeout handling | Data Staleness Detection |
-| UART Frame Reception Testing | ⚪ | P1 | - | Test UART frame reception and parsing for all message types | UART Packet Framing |
-| UART Frame Rotation Testing | ⚪ | P2 | - | Test frame rotation system prevents overrun errors | Frame Rotation System |
-| CAN Message Logging | ⚪ | P3 | - | Log received CAN messages | CAN Driver |
-| UART Transmission Monitoring | ⚪ | P3 | - | Monitor UART transmission success | UART Driver |
+| Feature                            | Status | Priority | Owner          | Notes                                                                        | Dependencies              |
+| ---------------------------------- | ------ | -------- | -------------- | ---------------------------------------------------------------------------- | ------------------------- |
+| Module-Level Data Function Testing | 🟢     | P1       | Samuel Breslin | Comprehensive testing of module data collection, aggregation, and processing | Module Data Collection    |
+| Fleet Summary Calculation Testing  | 🟢     | P1       | Samuel Breslin | Test fleet summary calculations with various module configurations           | Fleet Summary Calculation |
+| Online/Offline Detection Testing   | 🟢     | P1       | Samuel Breslin | Test module online/offline detection logic                                   | Online/Offline Detection  |
+| Data Staleness Detection Testing   | 🟢     | P1       | Samuel Breslin | Test data staleness detection and timeout handling                           | Data Staleness Detection  |
+| UART Frame Rotation Testing        | ⚪      | P2       | Samuel Breslin | Test frame rotation system prevents overrun errors                           | Frame Rotation System     |
 
 ---
 
@@ -159,21 +146,20 @@
 
 ### Core BMS Functionality
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| Fleet Data Reception | 🟢 | P0 | - | Receives fleet data from secondary MCU (UART queue, CRC validation) | UART Driver |
-| PrimaryBmsFleet Management | 🟢 | P0 | - | Stores and manages fleet summary data; data staleness detection in place | UART Reception |
-| Contactor Control Logic | 🟢 | P0 | - | Dual main contactor sequencing with staggered close and safety gating in `BmsManager` | Fleet Data, BmsManager |
-| Fault Decision Making | 🟡 | P0 | - | Core voltage/temp/current/data-stale faults implemented in `BmsManager` | Fleet Data |
-| Battery State Machine | 🟡 | P1 | - | INIT/IDLE/OPERATIONAL/FAULT/SHUTDOWN implemented; charge/discharge modes TBD | Contactor Control |
+| Feature                    | Status | Priority | Owner | Notes                                                                                 | Dependencies           |
+| -------------------------- | ------ | -------- | ----- | ------------------------------------------------------------------------------------- | ---------------------- |
+| Fleet Data Reception       | 🟢     | P0       | -     | Receives fleet data from secondary MCU (UART queue, CRC validation)                   | UART Driver            |
+| PrimaryBmsFleet Management | 🟢     | P0       | -     | Stores and manages fleet summary data; data staleness detection in place              | UART Reception         |
+| Contactor Control Logic    | 🟢     | P0       | -     | Dual main contactor sequencing with staggered close and safety gating in `BmsManager` | Fleet Data, BmsManager |
+| Fault Decision Making      | 🟡     | P0       | -     | Core voltage/temp/current/data-stale faults implemented in `BmsManager`               | Fleet Data             |
+| Fan Speed Control          | 🟡     | P1       | -     | Temperature-based PWM control in `BmsManager` (uses fleet highest temp)               | BTS71040 Driver        |
 
 ### Power Management
 
-| Feature | Status | Priority | Owner | Notes | Dependencies |
-|---------|--------|----------|-------|-------|--------------|
-| Fan Speed Control | 🟡 | P1 | - | Temperature-based PWM control in `BmsManager` (uses fleet highest temp) | BTS71040 Driver |
-| Power Management for Auxiliaries | ⚪ | P2 | - | Power management for solar car auxiliaries | - |
-| Current Monitoring | 🟡 | P1 | - | Pack current via ADS1115 with calibrated nonlinear fit; aux current via INA226 | INA226 Driver, ADS1115 Driver |
+| Feature                          | Status | Priority | Owner | Notes                                                                   | Dependencies    |
+| -------------------------------- | ------ | -------- | ----- | ----------------------------------------------------------------------- | --------------- |
+| Power Management for Auxiliaries | ⚪      | P2       | -     | Power management for solar car auxiliaries                              | -               |
+
 
 ### Communication
 

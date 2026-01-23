@@ -87,7 +87,17 @@ public:
 
         // Contactor sequencing
         // Delay between first and second main contactor closing (to limit inrush on coil supply)
-        uint32_t contactor_stagger_delay_ms = 50;
+        uint32_t contactor_stagger_delay_ms = 500;
+        // Grace period after closing contactors before fault checks can force them open
+        // This prevents immediate reopening due to inrush current or voltage transients
+        uint32_t contactor_close_grace_period_ms = 500;
+
+        // Debug mode (WARNING: Disables safety features - for testing only!)
+        struct DebugMode {
+            bool enabled = false;                    // Master enable for debug mode
+            bool force_contactors_closed = false;   // Force contactors closed regardless of state/faults
+            bool disable_fault_detection = false;   // Disable all fault detection
+        } debug_mode;
     };
 
     // ========== Initialization ==========
@@ -135,6 +145,11 @@ public:
     // ========== Configuration ==========
     void setConfig(const Config& config);
     const Config& getConfig() const;
+
+    // ========== Debug Mode ==========
+    // WARNING: Debug mode disables safety features - use only for testing!
+    void setDebugMode(bool enabled, bool force_contactors = false, bool disable_faults = false);
+    bool isDebugModeEnabled() const;
 
 private:
     // Internal update methods
@@ -207,6 +222,7 @@ private:
     bool contactor_open_request_;
     uint32_t contactor_stage_start_time_ms_;
     bool contactor_stage_active_;
+    uint32_t contactor_close_time_ms_;  // Timestamp when contactors were closed
 
     // Fan control
     uint8_t fan_speed_percent_;  // 0-100% PWM duty cycle
