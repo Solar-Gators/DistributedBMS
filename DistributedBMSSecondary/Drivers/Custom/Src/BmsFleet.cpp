@@ -6,6 +6,7 @@
  */
 #include <BmsFleet.hpp>
 #include <cstring>
+#include <cmath>
 #include "cmsis_os.h"
 #include "../../../DistributedBMSCommon/Inc/UartCrc16.hpp"
 
@@ -192,18 +193,27 @@ size_t BmsFleet::packFleetData(uint8_t* out) const
     out[offset++] = UART_FLEET_SUMMARY;  // payload[0] = message ID
 
     auto put_u16 = [&](uint16_t v) {
-        out[offset++] = v & 0xFF;
-        out[offset++] = (v >> 8) & 0xFF;
+        out[offset++] = static_cast<uint8_t>(v & 0xFF);
+        out[offset++] = static_cast<uint8_t>((v >> 8) & 0xFF);
+    };
+
+    auto put_s16 = [&](int16_t v) {
+        uint16_t uv = static_cast<uint16_t>(v);
+        out[offset++] = static_cast<uint8_t>(uv & 0xFF);
+        out[offset++] = static_cast<uint8_t>((uv >> 8) & 0xFF);
     };
 
     auto put_u8 = [&](uint8_t v) {
         out[offset++] = v;
     };
 
+    // Encode highest temperature in 0.1°C units to preserve sub-degree resolution
+    int16_t highest_c_x10 = static_cast<int16_t>(std::round(f.highestTemp * 10.0f));
+
     put_u16(f.totalVoltage);
     put_u16(f.highestVoltage);
     put_u16(f.lowestVoltage);
-    put_u16(f.highestTemp);
+    put_s16(highest_c_x10);
 
     put_u8(f.highVoltageID);
     put_u8(f.lowVoltageID);

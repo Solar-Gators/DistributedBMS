@@ -37,6 +37,12 @@ bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t* payload,
         v |= static_cast<uint16_t>(payload[offset++]) << 8;
     };
 
+    auto get_s16 = [&](int16_t& v) {
+        uint16_t tmp;
+        get_u16(tmp);
+        v = static_cast<int16_t>(tmp);
+    };
+
     auto get_u8 = [&](uint8_t& v) {
         v = payload[offset++];
     };
@@ -44,7 +50,7 @@ bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t* payload,
     uint16_t totalVoltage;
     uint16_t highestVoltage;
     uint16_t lowestVoltage;
-    uint16_t highestTemp;
+    int16_t  highestTemp_cdeg10;
     uint8_t  highVoltageID;
     uint8_t  lowVoltageID;
     uint8_t  highTempID;
@@ -52,7 +58,7 @@ bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t* payload,
     get_u16(totalVoltage);
     get_u16(highestVoltage);
     get_u16(lowestVoltage);
-    get_u16(highestTemp);
+    get_s16(highestTemp_cdeg10);
     get_u8(highVoltageID);
     get_u8(lowVoltageID);
     get_u8(highTempID);
@@ -61,7 +67,7 @@ bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t* payload,
     summary_.total_voltage_mV   = totalVoltage;
     summary_.highest_cell_mV    = highestVoltage;
     summary_.lowest_cell_mV     = lowestVoltage;
-    summary_.highest_temp_C     = highestTemp;
+    summary_.highest_temp_C     = uart_from_cdeg10(highestTemp_cdeg10);
 
     summary_.highest_cell_idx   = highVoltageID;
     summary_.lowest_cell_idx    = lowVoltageID;
