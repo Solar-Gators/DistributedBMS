@@ -330,7 +330,9 @@ void setup()
 
     //bms_manager->setDebugMode(true,true,true);
     // Allow sensors and measurements to settle before entering main loop
+
     HAL_Delay(2000);
+
 }
 
 // Main loop function
@@ -350,7 +352,7 @@ void loop()
         uart_queue_count--;
     }
 
-    // Update BMS Manager (handles fault detection, state machine, control)
+    // Update BMS Manager (handles fault detection, state machine, control, fan pwm)
     if (bms_manager != nullptr) {
         bms_manager->update(now_ms);
 

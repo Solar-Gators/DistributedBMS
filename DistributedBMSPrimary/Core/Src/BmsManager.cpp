@@ -6,6 +6,7 @@
  */
 
 #include "BmsManager.hpp"
+#include "User.hpp"
 #include <cmath>
 #include <cstring>
 
@@ -54,11 +55,17 @@ void BmsManager::init()
     fan_speed_percent_ = 0;
 
     // Initialize PWM if configured
-    if (fan_pwm_tim_ != nullptr) {
-        HAL_TIM_PWM_Start(fan_pwm_tim_, fan_pwm_channel_);
-        fan_pwm_initialized_ = true;
-        setFanPwmDuty(0);  // Start with fans off
-    }
+    // if (fan_pwm_tim_ != nullptr) {
+    //     HAL_TIM_PWM_Start(fan_pwm_tim_, fan_pwm_channel_);
+    //     fan_pwm_initialized_ = true;
+    //     setFanPwmDuty(0);  // Start with fans off
+    // }
+
+    // Initialize PWM Channels
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+    fan_pwm_initialized_ = true;
+    setFanPwmDuty(0);
 }
 
 // ========== Main Update Function ==========
@@ -236,12 +243,6 @@ void BmsManager::setSecondContactorGpio(GPIO_TypeDef* port, uint16_t pin)
 {
     second_contactor_gpio_port_ = port;
     second_contactor_gpio_pin_ = pin;
-}
-
-void BmsManager::setFanPwmTimer(TIM_HandleTypeDef* htim, uint32_t channel)
-{
-    fan_pwm_tim_ = htim;
-    fan_pwm_channel_ = channel;
 }
 
 // ========== Configuration ==========
@@ -496,13 +497,13 @@ void BmsManager::updateFans(uint32_t now_ms)
 
     // Calculate fan speed based on temperature
     uint8_t new_speed = 0;
-    if (highest_temp > config_.fan_on_temp_C) {
-        if (highest_temp >= config_.fan_max_temp_C) {
+    if (highest_temp > FAN_ON) {
+        if (highest_temp >= FAN_MAX) {
             new_speed = 100;  // Max speed
         } else {
             // Linear interpolation between fan_on_temp and fan_max_temp
-            float temp_range = config_.fan_max_temp_C - config_.fan_on_temp_C;
-            float temp_above_min = highest_temp - config_.fan_on_temp_C;
+            float temp_range = FAN_MAX - FAN_ON;
+            float temp_above_min = highest_temp - FAN_ON;
             new_speed = static_cast<uint8_t>((temp_above_min / temp_range) * 100.0f);
             if (new_speed > 100) new_speed = 100;
         }
@@ -734,13 +735,23 @@ void BmsManager::setFanPwmDuty(uint8_t percent)
         return;
     }
 
-    if (percent > 100) percent = 100;
+	TIM_OC_InitTypeDef sConfigOC = {0};
+
+    if (percent > 100)
+    {
+        percent = 100;
+    }
 
     // Calculate PWM compare value
-    uint32_t period = __HAL_TIM_GET_AUTORELOAD(fan_pwm_tim_);
-    uint32_t compare = (period * percent) / 100;
+    uint32_t compare = (PWM_PERIOD * percent) / 100;
 
-    __HAL_TIM_SET_COMPARE(fan_pwm_tim_, fan_pwm_channel_, compare);
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = compare;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+
+	HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1);
+	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_4);
 }
 
 // ========== Private: Safety Checks ==========

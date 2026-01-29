@@ -68,6 +68,7 @@ static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_UART4_Init(void);
 static void MX_ICACHE_Init(void);
+static void MX_PWM_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -111,8 +112,7 @@ int main(void)
   MX_FDCAN1_Init();
   MX_I2C2_Init();
   MX_SPI1_Init();
-  MX_TIM1_Init();
-  MX_TIM3_Init();
+  MX_PWM_Init();
   MX_UART4_Init();
   MX_ICACHE_Init();
   MX_USB_Device_Init();
@@ -120,6 +120,8 @@ int main(void)
 
   // Run setup from User.cpp
   setup();
+
+  while(1);
 
   /* USER CODE END 2 */
 
@@ -310,6 +312,64 @@ static void MX_ICACHE_Init(void)
   /* USER CODE BEGIN ICACHE_Init 2 */
 
   /* USER CODE END ICACHE_Init 2 */
+
+}
+
+static void MX_PWM_Init(void)
+{
+	// PC9 = FAN1_PWM
+	// PA8 = FAN2_PWM
+
+	// Enable Clocks
+	__HAL_RCC_TIM1_CLK_ENABLE();
+	__HAL_RCC_TIM3_CLK_ENABLE();
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+	// PA8 -> TIM1_CH1
+	GPIO_InitStruct.Pin = GPIO_PIN_8;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP; // Must be Alternate Function Push-Pull
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+	GPIO_InitStruct.Alternate = GPIO_AF1_TIM1;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	// PC9 -> TIM3_CH4
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Alternate = GPIO_AF2_TIM3;
+	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+	TIM_OC_InitTypeDef sConfigOC = {0};
+
+	// FAN1
+	htim1.Instance = TIM1;
+	htim1.Init.Prescaler = 0;         // (80MHz / 4 = 20MHz)
+	htim1.Init.Period = 639;          // (20MHz / 800 = 25kHz)
+	htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	htim1.Init.RepetitionCounter = 0; // TIM1 specific
+	HAL_TIM_PWM_Init(&htim1);
+
+	// FAN2
+	htim3.Instance = TIM3;
+	htim3.Init.Prescaler = 0;         // (80MHz / 4 = 20MHz)
+	htim3.Init.Period = 639;          // (20MHz / 800 = 25kHz)
+	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	HAL_TIM_PWM_Init(&htim3);
+
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 320;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+
+	HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1);
+	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_4);
+
+
+
 
 }
 

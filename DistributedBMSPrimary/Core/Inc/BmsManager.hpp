@@ -19,6 +19,12 @@
 #include "stm32l5xx_hal.h"
 #include <cstdint>
 
+
+// PWM CONSTANTS
+#define PWM_PERIOD 639
+#define FAN_ON 25.0f
+#define FAN_MAX 40.0f
+
 class BmsManager {
 public:
     // ========== Fault Types ==========
@@ -81,10 +87,6 @@ public:
         float current_gain = 1.0f;  // Current sense amplifier gain
         float current_offset_V = 0.0f;  // ADC offset voltage
 
-        // Fan control
-        float fan_on_temp_C = 30.0f;
-        float fan_max_temp_C = 40.0f;
-
         // Contactor sequencing
         // Delay between first and second main contactor closing (to limit inrush on coil supply)
         uint32_t contactor_stagger_delay_ms = 500;
@@ -140,7 +142,6 @@ public:
     // ========== Hardware Control ==========
     void setContactorGpio(GPIO_TypeDef* port, uint16_t pin);              // First main contactor (e.g. negative side)
     void setSecondContactorGpio(GPIO_TypeDef* port, uint16_t pin);        // Second main contactor (e.g. positive side)
-    void setFanPwmTimer(TIM_HandleTypeDef* htim, uint32_t channel);  // Set PWM timer for fans
 
     // ========== Configuration ==========
     void setConfig(const Config& config);
