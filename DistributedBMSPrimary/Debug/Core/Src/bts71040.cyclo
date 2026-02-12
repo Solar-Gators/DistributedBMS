@@ -1,0 +1,28 @@
+../Core/Src/bts71040.cpp:14:20:void spin_nops(uint16_t)	2
+../Core/Src/bts71040.cpp:16:1:Bts71040::Bts71040(SPI_HandleTypeDef*, const Pins&)	1
+../Core/Src/bts71040.cpp:22:6:void Bts71040::setCsDelays(uint16_t, uint16_t)	1
+../Core/Src/bts71040.cpp:27:13:void Bts71040::csLow()	1
+../Core/Src/bts71040.cpp:31:13:void Bts71040::csHigh()	1
+../Core/Src/bts71040.cpp:38:6:void Bts71040::setChannel(uint8_t, bool)	3
+../Core/Src/bts71040.cpp:43:6:void Bts71040::writeInputsMask(uint8_t)	2
+../Core/Src/bts71040.cpp:50:9:uint8_t Bts71040::readInputsMask() const	3
+../Core/Src/bts71040.cpp:61:19:HAL_StatusTypeDef Bts71040::transfer8(uint8_t, uint8_t&)	1
+../Core/Src/bts71040.cpp:69:19:HAL_StatusTypeDef Bts71040::xfer8(uint8_t, uint8_t&)	1
+../Core/Src/bts71040.cpp:76:19:HAL_StatusTypeDef Bts71040::writeOUT(uint8_t, uint8_t*)	3
+../Core/Src/bts71040.cpp:84:19:HAL_StatusTypeDef Bts71040::readOUT(uint8_t&)	3
+../Core/Src/bts71040.cpp:98:19:HAL_StatusTypeDef Bts71040::readSTDDIAG(StdDiag&)	3
+../Core/Src/bts71040.cpp:117:19:HAL_StatusTypeDef Bts71040::readWRNDIAG(WrnDiag&)	4
+../Core/Src/bts71040.cpp:129:19:HAL_StatusTypeDef Bts71040::readERRDIAG(ErrDiag&)	4
+../Core/Src/bts71040.cpp:141:19:HAL_StatusTypeDef Bts71040::readRCS(uint8_t&)	3
+../Core/Src/bts71040.cpp:153:19:HAL_StatusTypeDef Bts71040::writeDCR(uint8_t, uint8_t*)	3
+../Core/Src/bts71040.cpp:160:19:HAL_StatusTypeDef Bts71040::setSWR(bool, uint8_t*)	2
+../Core/Src/bts71040.cpp:172:19:HAL_StatusTypeDef Bts71040::writeHWCR(uint8_t, uint8_t*)	3
+../Core/Src/bts71040.cpp:179:19:HAL_StatusTypeDef Bts71040::writePCS(uint8_t, bool)	3
+../Core/Src/bts71040.cpp:188:19:HAL_StatusTypeDef Bts71040::writeOCR(uint8_t, bool)	3
+../Core/Src/bts71040.cpp:197:19:HAL_StatusTypeDef Bts71040::writeKRC(uint8_t, bool)	3
+../Core/Src/bts71040.cpp:206:19:HAL_StatusTypeDef Bts71040::writeRCD(uint8_t, bool)	3
+../Core/Src/bts71040.cpp:215:19:HAL_StatusTypeDef Bts71040::writeICS(uint8_t, bool)	3
+../Core/Src/bts71040.cpp:234:24:Bts71040::computeChecksum4(uint8_t, uint8_t, uint8_t, uint8_t, bool, uint8_t)::<lambda(uint8_t)>	1
+../Core/Src/bts71040.cpp:239:23:Bts71040::computeChecksum4(uint8_t, uint8_t, uint8_t, uint8_t, bool, uint8_t)::<lambda(uint8_t)>	1
+../Core/Src/bts71040.cpp:248:21:Bts71040::computeChecksum4(uint8_t, uint8_t, uint8_t, uint8_t, bool, uint8_t)::<lambda(int)>	6
+../Core/Src/bts71040.cpp:229:9:static uint8_t Bts71040::computeChecksum4(uint8_t, uint8_t, uint8_t, uint8_t, bool, uint8_t)	1

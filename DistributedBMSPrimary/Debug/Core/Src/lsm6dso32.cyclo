@@ -1,0 +1,9 @@
+../Core/Src/lsm6dso32.cpp:33:1:LSM6DSO32::LSM6DSO32(I2C_HandleTypeDef*, uint8_t)	1
+../Core/Src/lsm6dso32.cpp:43:19:HAL_StatusTypeDef LSM6DSO32::writeReg(uint8_t, uint8_t)	1
+../Core/Src/lsm6dso32.cpp:51:19:HAL_StatusTypeDef LSM6DSO32::readRegs(uint8_t, uint8_t*, uint16_t)	1
+../Core/Src/lsm6dso32.cpp:62:19:HAL_StatusTypeDef LSM6DSO32::readWhoAmI(uint8_t&)	1
+../Core/Src/lsm6dso32.cpp:70:19:HAL_StatusTypeDef LSM6DSO32::init(Odr, AccelFs, Odr, GyroFs)	9
+../Core/Src/lsm6dso32.cpp:153:19:HAL_StatusTypeDef LSM6DSO32::readRaw(RawData&)	2
+../Core/Src/lsm6dso32.cpp:177:19:HAL_StatusTypeDef LSM6DSO32::readScaled(ScaledData&)	2
+../Core/Src/lsm6dso32.cpp:215:7:float LSM6DSO32::accelSensitivity_g_per_lsb(AccelFs) const	5
+../Core/Src/lsm6dso32.cpp:236:7:float LSM6DSO32::gyroSensitivity_dps_per_lsb(GyroFs) const	6

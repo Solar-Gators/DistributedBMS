@@ -1,0 +1,18 @@
+../Core/Src/BmsCanInterface.cpp:5:1:BmsCanInterface::BmsCanInterface(CanFdBus&, BmsManager&)	32	static
+../Core/Src/BmsCanInterface.cpp:16:6:void BmsCanInterface::init(const Config&)	24	static
+../Core/Src/BmsCanInterface.cpp:25:6:void BmsCanInterface::update(uint32_t)	16	static
+../Core/Src/BmsCanInterface.cpp:34:6:void BmsCanInterface::sendHeartbeat()	128	static
+../Core/Src/BmsCanInterface.cpp:47:6:void BmsCanInterface::sendPackStatus()	128	static
+../Core/Src/BmsCanInterface.cpp:60:6:void BmsCanInterface::sendTemperature()	128	static
+../Core/Src/BmsCanInterface.cpp:73:6:void BmsCanInterface::sendCellVoltages()	128	static
+../Core/Src/BmsCanInterface.cpp:86:6:void BmsCanInterface::sendFaultStatus()	128	static
+../Core/Src/BmsCanInterface.cpp:99:6:void BmsCanInterface::setConfig(const Config&)	24	static
+../Core/Src/BmsCanInterface.cpp:104:32:const BmsCanInterface::Config& BmsCanInterface::getConfig() const	16	static
+../Core/Src/BmsCanInterface.cpp:111:6:void BmsCanInterface::updatePeriodicTransmission(uint32_t)	16	static
+../Core/Src/BmsCanInterface.cpp:126:6:void BmsCanInterface::processReceivedMessages(uint32_t)	104	static
+../Core/Src/BmsCanInterface.cpp:144:6:void BmsCanInterface::handleCommand(const BmsCanProtocol::CommandMsg&)	16	static
+../Core/Src/BmsCanInterface.cpp:169:30:BmsCanProtocol::HeartbeatMsg BmsCanInterface::createHeartbeatMsg(uint32_t)	32	static
+../Core/Src/BmsCanInterface.cpp:190:31:BmsCanProtocol::PackStatusMsg BmsCanInterface::createPackStatusMsg()	24	static
+../Core/Src/BmsCanInterface.cpp:212:32:BmsCanProtocol::TemperatureMsg BmsCanInterface::createTemperatureMsg()	24	static
+../Core/Src/BmsCanInterface.cpp:234:33:BmsCanProtocol::CellVoltagesMsg BmsCanInterface::createCellVoltagesMsg()	24	static
+../Core/Src/BmsCanInterface.cpp:254:32:BmsCanProtocol::FaultStatusMsg BmsCanInterface::createFaultStatusMsg()	32	static

@@ -1,0 +1,18 @@
+../Core/Src/BmsCanInterface.cpp:5:1:BmsCanInterface::BmsCanInterface(CanFdBus&, BmsManager&)	1
+../Core/Src/BmsCanInterface.cpp:16:6:void BmsCanInterface::init(const Config&)	1
+../Core/Src/BmsCanInterface.cpp:25:6:void BmsCanInterface::update(uint32_t)	1
+../Core/Src/BmsCanInterface.cpp:34:6:void BmsCanInterface::sendHeartbeat()	2
+../Core/Src/BmsCanInterface.cpp:47:6:void BmsCanInterface::sendPackStatus()	2
+../Core/Src/BmsCanInterface.cpp:60:6:void BmsCanInterface::sendTemperature()	2
+../Core/Src/BmsCanInterface.cpp:73:6:void BmsCanInterface::sendCellVoltages()	2
+../Core/Src/BmsCanInterface.cpp:86:6:void BmsCanInterface::sendFaultStatus()	2
+../Core/Src/BmsCanInterface.cpp:99:6:void BmsCanInterface::setConfig(const Config&)	1
+../Core/Src/BmsCanInterface.cpp:104:32:const BmsCanInterface::Config& BmsCanInterface::getConfig() const	1
+../Core/Src/BmsCanInterface.cpp:111:6:void BmsCanInterface::updatePeriodicTransmission(uint32_t)	3
+../Core/Src/BmsCanInterface.cpp:126:6:void BmsCanInterface::processReceivedMessages(uint32_t)	4
+../Core/Src/BmsCanInterface.cpp:144:6:void BmsCanInterface::handleCommand(const BmsCanProtocol::CommandMsg&)	5
+../Core/Src/BmsCanInterface.cpp:169:30:BmsCanProtocol::HeartbeatMsg BmsCanInterface::createHeartbeatMsg(uint32_t)	3
+../Core/Src/BmsCanInterface.cpp:190:31:BmsCanProtocol::PackStatusMsg BmsCanInterface::createPackStatusMsg()	2
+../Core/Src/BmsCanInterface.cpp:212:32:BmsCanProtocol::TemperatureMsg BmsCanInterface::createTemperatureMsg()	1
+../Core/Src/BmsCanInterface.cpp:234:33:BmsCanProtocol::CellVoltagesMsg BmsCanInterface::createCellVoltagesMsg()	1
+../Core/Src/BmsCanInterface.cpp:254:32:BmsCanProtocol::FaultStatusMsg BmsCanInterface::createFaultStatusMsg()	6

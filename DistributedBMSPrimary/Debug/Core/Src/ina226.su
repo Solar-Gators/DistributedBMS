@@ -1,0 +1,13 @@
+/home/ahmedsattar/st/stm32cubeide_2.0.0_3/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.linux64_1.0.100.202509120712/tools/arm-none-eabi/include/c++/13.3.1/cmath:2482:3:constexpr float std::round(float)	16	static
+../Core/Src/ina226.cpp:16:1:INA226::INA226(I2C_HandleTypeDef*, uint8_t)	24	static
+../Core/Src/ina226.cpp:24:19:HAL_StatusTypeDef INA226::writeReg16(uint8_t, uint16_t)	40	static
+../Core/Src/ina226.cpp:36:19:HAL_StatusTypeDef INA226::readReg16(uint8_t, uint16_t&)	48	static
+../Core/Src/ina226.cpp:58:10:uint16_t INA226::computeCalibration(float, float)	32	static
+../Core/Src/ina226.cpp:82:19:HAL_StatusTypeDef INA226::init(float, float, uint16_t)	32	static
+../Core/Src/ina226.cpp:111:19:HAL_StatusTypeDef INA226::writeConfig(uint16_t)	16	static
+../Core/Src/ina226.cpp:116:19:HAL_StatusTypeDef INA226::writeCalibration(uint16_t)	16	static
+../Core/Src/ina226.cpp:125:19:HAL_StatusTypeDef INA226::readShuntVoltage(float&)	24	static
+../Core/Src/ina226.cpp:140:19:HAL_StatusTypeDef INA226::readBusVoltage(float&)	24	static
+../Core/Src/ina226.cpp:156:19:HAL_StatusTypeDef INA226::readCurrent(float&)	24	static
+../Core/Src/ina226.cpp:176:19:HAL_StatusTypeDef INA226::readPower(float&)	24	static
+../Core/Src/ina226.cpp:194:19:HAL_StatusTypeDef INA226::readMeasurement(Measurement&)	24	static

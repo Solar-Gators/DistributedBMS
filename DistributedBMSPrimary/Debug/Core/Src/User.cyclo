@@ -1,0 +1,10 @@
+../Core/Src/../../../DistributedBMSCommon/Inc/UartCrc16.hpp:27:21:uint16_t UartCrc16::calculate(const uint8_t*, size_t)	4
+../Core/Src/../../../DistributedBMSCommon/Inc/UartCrc16.hpp:59:17:bool UartCrc16::validate(const uint8_t*, size_t)	1
+../Core/Src/User.cpp:99:13:void uart_enqueue_packet(const uint8_t*, uint16_t, uint32_t)	4
+../Core/Src/User.cpp:124:13:void process_uart_message(const UartMessage*)	7
+../Core/Src/User.cpp:158:6:void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef*, uint16_t)	9
+../Core/Src/User.cpp:220:6:void HAL_UART_ErrorCallback(UART_HandleTypeDef*)	6
+../Core/Src/User.cpp:254:6:void setup()	4
+../Core/Src/User.cpp:339:6:void loop()	14
+../Core/Src/User.cpp:411:1:void __static_initialization_and_destruction_0()	1
+../Core/Src/User.cpp:411:1:cpp)	1

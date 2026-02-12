@@ -1,0 +1,56 @@
+../Core/Inc/PrimaryBmsFleet.hpp:52:10:bool FleetSummaryData::is_online(uint32_t, uint32_t) const	24	static
+../Core/Inc/PrimaryBmsFleet.hpp:137:23:FleetSummaryData& PrimaryBmsFleet::summary()	16	static
+../Core/Inc/PrimaryBmsFleet.hpp:145:10:bool PrimaryBmsFleet::has_data(uint32_t) const	16	static
+/home/ahmedsattar/st/stm32cubeide_2.0.0_3/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.linux64_1.0.100.202509120712/tools/arm-none-eabi/include/c++/13.3.1/cmath:372:3:constexpr float std::pow(float, float)	16	static
+../Core/Inc/BmsManager.hpp:98:16:constexpr BmsManager::Config::DebugMode::DebugMode()	16	static
+../Core/Inc/BmsManager.hpp:59:12:constexpr BmsManager::Config::Config()	16	static
+../Core/Src/BmsManager.cpp:14:1:BmsManager::BmsManager(PrimaryBmsFleet*, ADS1115*, INA226*)	24	static
+../Core/Src/BmsManager.cpp:49:6:void BmsManager::init()	16	static
+../Core/Src/BmsManager.cpp:72:6:void BmsManager::update(uint32_t)	16	static
+../Core/Src/BmsManager.cpp:89:25:const FleetSummaryData& BmsManager::getFleetSummary() const	16	static
+../Core/Src/BmsManager.cpp:94:7:float BmsManager::getBatteryCurrent_A() const	16	static
+../Core/Src/BmsManager.cpp:99:7:float BmsManager::getAuxCurrent_A() const	16	static
+../Core/Src/BmsManager.cpp:104:7:float BmsManager::getPackVoltage_V() const	16	static
+../Core/Src/BmsManager.cpp:109:6:bool BmsManager::hasValidData(uint32_t) const	16	static
+../Core/Src/BmsManager.cpp:115:10:uint16_t BmsManager::getActiveFaults() const	16	static
+../Core/Src/BmsManager.cpp:120:6:bool BmsManager::hasFault(FaultType) const	16	static
+../Core/Src/BmsManager.cpp:125:6:bool BmsManager::hasCriticalFault() const	16	static
+../Core/Src/BmsManager.cpp:130:13:const char* BmsManager::getFaultName(FaultType) const	16	static
+../Core/Src/BmsManager.cpp:148:22:BmsManager::BmsState BmsManager::getState() const	16	static
+../Core/Src/BmsManager.cpp:153:13:const char* BmsManager::getStateName() const	16	static
+../Core/Src/BmsManager.cpp:165:6:bool BmsManager::canTransitionTo(BmsState) const	16	static
+../Core/Src/BmsManager.cpp:195:6:void BmsManager::requestContactorsClose()	16	static
+../Core/Src/BmsManager.cpp:201:6:void BmsManager::requestContactorsOpen()	16	static
+../Core/Src/BmsManager.cpp:207:6:void BmsManager::requestShutdown()	16	static
+../Core/Src/BmsManager.cpp:212:6:void BmsManager::clearFaults()	16	static
+../Core/Src/BmsManager.cpp:219:6:bool BmsManager::areContactorsClosed() const	16	static
+../Core/Src/BmsManager.cpp:224:9:uint8_t BmsManager::getFanSpeed() const	16	static
+../Core/Src/BmsManager.cpp:229:7:float BmsManager::getStateOfCharge() const	16	static
+../Core/Src/BmsManager.cpp:236:6:void BmsManager::setContactorGpio(GPIO_TypeDef*, uint16_t)	24	static
+../Core/Src/BmsManager.cpp:242:6:void BmsManager::setSecondContactorGpio(GPIO_TypeDef*, uint16_t)	24	static
+../Core/Src/BmsManager.cpp:249:6:void BmsManager::setConfig(const Config&)	16	static
+../Core/Src/BmsManager.cpp:255:6:void BmsManager::setDebugMode(bool, bool, bool)	16	static
+../Core/Src/BmsManager.cpp:262:6:bool BmsManager::isDebugModeEnabled() const	16	static
+../Core/Src/BmsManager.cpp:267:27:const BmsManager::Config& BmsManager::getConfig() const	16	static
+../Core/Src/BmsManager.cpp:273:6:void BmsManager::updateCurrentMeasurements(uint32_t)	40	static
+../Core/Src/BmsManager.cpp:297:6:void BmsManager::updateFaults(uint32_t)	24	static
+../Core/Src/BmsManager.cpp:342:6:void BmsManager::updateStateMachine(uint32_t)	24	static
+../Core/Src/BmsManager.cpp:405:6:void BmsManager::updateContactors(uint32_t)	32	static
+../Core/Src/BmsManager.cpp:487:6:void BmsManager::updateFans(uint32_t)	48	static
+../Core/Src/BmsManager.cpp:520:6:void BmsManager::enterState(BmsState, uint32_t)	24	static
+../Core/Src/BmsManager.cpp:555:6:void BmsManager::exitState(BmsState)	16	static
+../Core/Src/BmsManager.cpp:561:6:void BmsManager::processState(BmsState, uint32_t)	24	static
+../Core/Src/BmsManager.cpp:569:6:bool BmsManager::checkOvervoltage()	24	static
+../Core/Src/BmsManager.cpp:584:6:bool BmsManager::checkUndervoltage()	24	static
+../Core/Src/BmsManager.cpp:599:6:bool BmsManager::checkCellImbalance()	24	static
+../Core/Src/BmsManager.cpp:608:6:bool BmsManager::checkOvertemperature()	32	static
+../Core/Src/BmsManager.cpp:623:6:bool BmsManager::checkUndertemperature()	32	static
+../Core/Src/BmsManager.cpp:638:6:bool BmsManager::checkBatteryOvercurrent()	32	static
+../Core/Src/BmsManager.cpp:653:6:bool BmsManager::checkAuxOvercurrent()	32	static
+../Core/Src/BmsManager.cpp:668:6:bool BmsManager::checkDataStale(uint32_t)	16	static
+../Core/Src/BmsManager.cpp:674:7:float BmsManager::convertAdcToCurrent(float)	48	static
+../Core/Src/BmsManager.cpp:700:6:void BmsManager::setContactorGpioState(bool)	24	static
+../Core/Src/BmsManager.cpp:716:6:void BmsManager::setSecondContactorGpioState(bool)	24	static
+../Core/Src/BmsManager.cpp:732:6:void BmsManager::setFanPwmDuty(uint8_t)	48	static
+../Core/Src/BmsManager.cpp:758:6:bool BmsManager::canCloseContactors() const	24	static
+../Core/Src/BmsManager.cpp:777:6:void BmsManager::emergencyShutdown()	16	static

@@ -1,0 +1,10 @@
+../Core/Src/ads1115.cpp:15:1:ADS1115::ADS1115(I2C_HandleTypeDef*, Addr7, Pga, DataRate)	1
+../Core/Src/ads1115.cpp:29:7:float ADS1115::fullScaleFromPga(Pga) const	7
+../Core/Src/ads1115.cpp:46:19:HAL_StatusTypeDef ADS1115::init()	1
+../Core/Src/ads1115.cpp:55:19:HAL_StatusTypeDef ADS1115::writeReg16(uint8_t, uint16_t)	1
+../Core/Src/ads1115.cpp:67:19:HAL_StatusTypeDef ADS1115::readReg16(uint8_t, uint16_t&)	2
+../Core/Src/ads1115.cpp:97:10:uint16_t ADS1115::buildConfigWord(uint8_t) const	7
+../Core/Src/ads1115.cpp:137:19:HAL_StatusTypeDef ADS1115::readSingleEndedRaw(uint8_t, int16_t&)	11
+../Core/Src/ads1115.cpp:198:19:HAL_StatusTypeDef ADS1115::readSingleEnded(uint8_t, float&)	3
+../Core/Src/ads1115.cpp:224:6:void ADS1115::setPga(Pga)	1
+../Core/Src/ads1115.cpp:230:6:void ADS1115::setDataRate(DataRate)	1

@@ -1,0 +1,17 @@
+17:15:41 **** Incremental Build of configuration Debug for project DistributedBMSPrimary ****
+make -j20 all 
+arm-none-eabi-g++ "../Core/Src/main.cpp" -mcpu=cortex-m33 -std=gnu++14 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32L552xx -c -I../Core/Inc -I../USB_Device/App -I../USB_Device/Target -I../Drivers/STM32L5xx_HAL_Driver/Inc -I../Drivers/STM32L5xx_HAL_Driver/Inc/Legacy -I../Middlewares/Third_Party/FreeRTOS/Source/include -I../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2 -I../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM33_NTZ/non_secure -I../Drivers/CMSIS/RTOS2/Include -I../Middlewares/ST/STM32_USB_Device_Library/Core/Inc -I../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc -I../Drivers/CMSIS/Device/ST/STM32L5xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti -fno-use-cxa-atexit -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-g++ -o "DistributedBMSPrimary.elf" @"objects.list"   -mcpu=cortex-m33 -T"/home/ahmedsattar/workspace/Solar_Gators/DistributedBMS-Threaded/DistributedBMSPrimary/STM32L552RETX_FLASH.ld" -Wl,-Map="DistributedBMSPrimary.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
+Finished building target: DistributedBMSPrimary.elf
+ 
+arm-none-eabi-size  DistributedBMSPrimary.elf 
+arm-none-eabi-objdump -h -S DistributedBMSPrimary.elf  > "DistributedBMSPrimary.list"
+   text	   data	    bss	    dec	    hex	filename
+  85680	    340	  23628	 109648	  1ac50	DistributedBMSPrimary.elf
+Finished building: default.size.stdout
+ 
+Finished building: DistributedBMSPrimary.list
+ 
+
+17:15:41 Build Finished. 0 errors, 0 warnings. (took 368ms)
+

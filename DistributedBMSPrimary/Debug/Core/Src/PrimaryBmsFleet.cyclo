@@ -1,0 +1,14 @@
+../Core/Inc/../../../DistributedBMSCommon/Inc/UartFleetTypes.hpp:60:21:float uart_from_cdeg10(int16_t)	1
+../Core/Inc/PrimaryBmsFleet.hpp:61:10:void FleetSummaryData::clear()	1
+../Core/Src/PrimaryBmsFleet.cpp:13:1:PrimaryBmsFleet::PrimaryBmsFleet()	2
+../Core/Src/PrimaryBmsFleet.cpp:35:20:PrimaryBmsFleet::update_from_uart_payload(const uint8_t*, uint16_t, uint32_t)::<lambda(uint16_t&)>	1
+../Core/Src/PrimaryBmsFleet.cpp:40:20:PrimaryBmsFleet::update_from_uart_payload(const uint8_t*, uint16_t, uint32_t)::<lambda(int16_t&)>	1
+../Core/Src/PrimaryBmsFleet.cpp:46:19:PrimaryBmsFleet::update_from_uart_payload(const uint8_t*, uint16_t, uint32_t)::<lambda(uint8_t&)>	1
+../Core/Src/PrimaryBmsFleet.cpp:17:6:bool PrimaryBmsFleet::update_from_uart_payload(const uint8_t*, uint16_t, uint32_t)	4
+../Core/Src/PrimaryBmsFleet.cpp:99:19:PrimaryBmsFleet::update_module_summary(const uint8_t*, uint16_t, uint32_t)::<lambda(uint8_t&)>	1
+../Core/Src/PrimaryBmsFleet.cpp:103:20:PrimaryBmsFleet::update_module_summary(const uint8_t*, uint16_t, uint32_t)::<lambda(uint16_t&)>	1
+../Core/Src/PrimaryBmsFleet.cpp:108:20:PrimaryBmsFleet::update_module_summary(const uint8_t*, uint16_t, uint32_t)::<lambda(uint32_t&)>	1
+../Core/Src/PrimaryBmsFleet.cpp:82:6:bool PrimaryBmsFleet::update_module_summary(const uint8_t*, uint16_t, uint32_t)	5
+../Core/Src/PrimaryBmsFleet.cpp:165:6:bool PrimaryBmsFleet::update_heartbeat(const uint8_t*, uint16_t, uint32_t)	4
+../Core/Src/PrimaryBmsFleet.cpp:186:6:bool PrimaryBmsFleet::update_summary_from_modules(uint32_t)	7
+/home/ahmedsattar/st/stm32cubeide_2.0.0_3/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.linux64_1.0.100.202509120712/tools/arm-none-eabi/include/c++/13.3.1/array:200:7:std::array<_Tp, _Nm>::value_type& std::array<_Tp, _Nm>::operator[](size_type) [with _Tp = ModuleSummaryData; unsigned int _Nm = 8]	1

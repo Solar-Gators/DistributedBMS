@@ -1,0 +1,66 @@
+!SESSION 2026-02-12 16:29:14.226 -----------------------------------------------
+eclipse.buildId=Version 2.0.0
+java.version=21.0.8
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=linux, ARCH=x86_64, WS=gtk, NL=en_US
+Command-line arguments:  -os linux -ws gtk -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-02-12 16:29:28.100
+!MESSAGE Log4j2 initialized with config file /home/ahmedsattar/workspace/Solar_Gators/DistributedBMS-Threaded/.metadata/.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-02-12 16:29:31.435
+!MESSAGE Started RMI Server, listening on port 41337
+!SESSION 2026-02-12 16:42:58.669 -----------------------------------------------
+eclipse.buildId=Version 2.0.0
+java.version=21.0.8
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=linux, ARCH=x86_64, WS=gtk, NL=en_US
+Command-line arguments:  -os linux -ws gtk -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-02-12 16:43:02.269
+!MESSAGE Log4j2 initialized with config file /home/ahmedsattar/workspace/Solar_Gators/DistributedBMS-Threaded/.metadata/.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-02-12 16:43:03.887
+!MESSAGE Started RMI Server, listening on port 41337
+!SESSION 2026-02-12 16:47:36.793 -----------------------------------------------
+eclipse.buildId=Version 2.0.0
+java.version=21.0.8
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=linux, ARCH=x86_64, WS=gtk, NL=en_US
+Command-line arguments:  -os linux -ws gtk -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-02-12 16:47:40.228
+!MESSAGE Log4j2 initialized with config file /home/ahmedsattar/workspace/Solar_Gators/DistributedBMS-Threaded/.metadata/.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-02-12 16:47:42.445
+!MESSAGE Started RMI Server, listening on port 41337
+!SESSION 2026-02-12 16:57:45.366 -----------------------------------------------
+eclipse.buildId=Version 2.0.0
+java.version=21.0.8
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=linux, ARCH=x86_64, WS=gtk, NL=en_US
+Command-line arguments:  -os linux -ws gtk -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-02-12 16:57:49.030
+!MESSAGE Log4j2 initialized with config file /home/ahmedsattar/workspace/Solar_Gators/DistributedBMS-Threaded/.metadata/.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-02-12 16:57:50.817
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.core 1 0 2026-02-12 16:58:55.167
+!MESSAGE Indexed 'DistributedBMSPrimary' (56 sources, 174 headers) in 2.5 sec: 22,104 declarations; 133,784 references; 4 unresolved inclusions; 77 syntax errors; 178 unresolved names (0.11%)
+
+!ENTRY com.st.stm32cube.ide.mcu.build 1 1 2026-02-12 17:01:05.891
+!MESSAGE Converted project DistributedBMSPrimary to C++ in 142 (ms)
+!SESSION 2026-02-12 18:17:09.632 -----------------------------------------------
+eclipse.buildId=Version 2.0.0
+java.version=21.0.8
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=linux, ARCH=x86_64, WS=gtk, NL=en_US
+Command-line arguments:  -os linux -ws gtk -arch x86_64
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2026-02-12 18:17:16.507
+!MESSAGE Log4j2 initialized with config file /home/ahmedsattar/workspace/Solar_Gators/DistributedBMS-Threaded/.metadata/.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2026-02-12 18:17:21.526
+!MESSAGE Started RMI Server, listening on port 41337
