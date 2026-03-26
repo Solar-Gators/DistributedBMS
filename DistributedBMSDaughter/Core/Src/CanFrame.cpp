@@ -44,4 +44,6 @@ inline Frame8 make_average_stats(const BMS::Results& r) {
     return f;
 }
 
+
+
 } // namespace CanFrames
