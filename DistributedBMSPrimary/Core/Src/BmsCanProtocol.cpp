@@ -5,6 +5,106 @@ namespace BmsCanProtocol {
 
 // ========== Message Encoder ==========
 
+CanFdFrame MessageEncoder::encodeBmsStatus(const BmsStatusMsg& msg)
+{
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_STATUS;
+    frame.fd_frame = false;  // Classic CAN
+    frame.dlc = 8;
+    // Byte 0: BMS Faults MSB, Byte 1: BMS Faults LSB (big-endian per spec)
+    frame.data[0] = static_cast<uint8_t>((msg.bms_faults >> 8) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>(msg.bms_faults & 0xFF);
+    frame.data[2] = msg.contactors_state;
+    frame.data[3] = msg.daughter_board_status;
+    frame.data[4] = 0;
+    frame.data[5] = 0;
+    frame.data[6] = 0;
+    frame.data[7] = 0;
+    return frame;
+}
+
+CanFdFrame MessageEncoder::encodeBatteryVoltage(const BatteryVoltageMsg& msg)
+{
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_BATTERY_VOLTAGE;
+    frame.fd_frame = false;  // Classic CAN
+    frame.dlc = 8;
+
+    // Total pack voltage (V * 100), MSB first
+    frame.data[0] = static_cast<uint8_t>((msg.total_voltage_x100 >> 8) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>(msg.total_voltage_x100 & 0xFF);
+
+    // Highest cell voltage (mV), MSB first
+    frame.data[2] = static_cast<uint8_t>((msg.highest_cell_mV >> 8) & 0xFF);
+    frame.data[3] = static_cast<uint8_t>(msg.highest_cell_mV & 0xFF);
+
+    // Highest cell index
+    frame.data[4] = msg.highest_cell_idx;
+
+    // Lowest cell voltage (mV), MSB first
+    frame.data[5] = static_cast<uint8_t>((msg.lowest_cell_mV >> 8) & 0xFF);
+    frame.data[6] = static_cast<uint8_t>(msg.lowest_cell_mV & 0xFF);
+
+    // Lowest cell index
+    frame.data[7] = msg.lowest_cell_idx;
+
+    return frame;
+}
+
+CanFdFrame MessageEncoder::encodeBatteryTemperature(const BatteryTemperatureMsg& msg)
+{
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_BATTERY_TEMPERATURE;
+    frame.fd_frame = false;  // Classic CAN
+    frame.dlc = 8;
+
+    // Byte 0-1: High Temp (temp*10, e.g. 456 = 45.6°C), MSB first
+    frame.data[0] = static_cast<uint8_t>((msg.high_temp_C_x10 >> 8) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>(msg.high_temp_C_x10 & 0xFF);
+
+    // Byte 2: High Temp Index (which module)
+    frame.data[2] = msg.high_temp_idx;
+
+    // Byte 3-4: Avg Temp (temp*10), MSB first
+    frame.data[3] = static_cast<uint8_t>((msg.avg_temp_C_x10 >> 8) & 0xFF);
+    frame.data[4] = static_cast<uint8_t>(msg.avg_temp_C_x10 & 0xFF);
+
+    // Byte 5-7: Reserved
+    frame.data[5] = 0;
+    frame.data[6] = 0;
+    frame.data[7] = 0;
+
+    return frame;
+}
+
+CanFdFrame MessageEncoder::encodeBatteryCurrent(const BatteryCurrentMsg& msg)
+{
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_BATTERY_CURRENT;
+    frame.fd_frame = false;  // Classic CAN
+    frame.dlc = 8;
+
+    // Byte 0-3: Battery current as float (IEEE 754, big-endian: MSB first)
+    uint32_t bits;
+    std::memcpy(&bits, &msg.current_A, sizeof(float));
+    frame.data[0] = static_cast<uint8_t>((bits >> 24) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>((bits >> 16) & 0xFF);
+    frame.data[2] = static_cast<uint8_t>((bits >> 8) & 0xFF);
+    frame.data[3] = static_cast<uint8_t>(bits & 0xFF);
+
+    // Byte 4-7: Reserved
+    frame.data[4] = 0;
+    frame.data[5] = 0;
+    frame.data[6] = 0;
+    frame.data[7] = 0;
+
+    return frame;
+}
+
 CanFdFrame MessageEncoder::encodeHeartbeat(const HeartbeatMsg& msg)
 {
     CanFdFrame frame{};
@@ -137,6 +237,10 @@ bool MessageDecoder::decodeConfigRequest(const CanFdFrame& frame, ConfigRequestM
 
 CanId MessageDecoder::getMessageType(uint16_t can_id)
 {
+    if (can_id == BMS_STATUS) return BMS_STATUS;
+    if (can_id == BMS_BATTERY_VOLTAGE) return BMS_BATTERY_VOLTAGE;
+    if (can_id == BMS_BATTERY_TEMPERATURE) return BMS_BATTERY_TEMPERATURE;
+    if (can_id == BMS_BATTERY_CURRENT) return BMS_BATTERY_CURRENT;
     if (can_id >= BMS_HEARTBEAT && can_id <= BMS_CELL_VOLTAGES) {
         return static_cast<CanId>(can_id);
     }

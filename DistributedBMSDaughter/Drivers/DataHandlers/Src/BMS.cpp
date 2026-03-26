@@ -13,35 +13,39 @@ BMS::BMS(uint8_t num_cells, ThermParams tp) : tp_(tp) {
 }
 
 void BMS::set_num_cells(uint8_t n) {
-    num_cells_ = (n < 3) ? 3 : (n > 5 ? 5 : n);
+    num_cells_ = (n < 3) ? 3 : (n > 6 ? 6 : n);
 
     if (num_cells_ == 3) {
-        cell_phys_map_ = {0,1,4,255,255};
+        cell_phys_map_ = {0,1,4,255,255,255};
     } else if (num_cells_ == 4) {
-        cell_phys_map_ = {0,1,2,4,255};
+        cell_phys_map_ = {0,1,2,4,255,255};
+    } else if (num_cells_ == 5) {
+        cell_phys_map_ = {0,1,2,3,4,255};
     } else { // 5
-        cell_phys_map_ = {0,1,2,3,4};
+        cell_phys_map_ = {0,1,2,3,4,5};
     }
 
-    for (uint8_t i=0;i<5;++i)
-        temp_use_[i] = (i < num_cells_);
+    for (uint8_t i = 0; i < 6; ++i) {
+        // Temp sensors are conceptually independent of cell count.
+        // Default: treat all 6 as enabled; compute_temps() will ignore invalid readings (NaN).
+        temp_use_[i] = true;
+    }
 }
 
 uint8_t BMS::num_cells() const { return num_cells_; }
 
-void BMS::set_cell_mV(const std::array<uint16_t,5>& mV) {
+void BMS::set_cell_mV(const std::array<uint16_t,6>& mV) {
     cell_mV_ = mV;
 }
 
-void BMS::set_ntc_volts(const std::array<float,5>& v) {
+void BMS::set_ntc_volts(const std::array<float,6>& v) {
     ntc_V_ = v;
     have_ntc_volts_ = true;
 }
 
-void BMS::set_ntc_counts(const std::array<uint16_t,5>& counts) {
-    for (size_t i=0;i<5;++i)
-        ntc_V_[i] = tp_.vref * (float(counts[i]) / tp_.adc_fs);
-    have_ntc_volts_ = true;
+void BMS::set_ntc_counts(const std::array<uint16_t,6>& counts) {
+    ntc_counts_ = counts;
+    have_ntc_counts_ = true;
 }
 
 void BMS::setFaults(uint8_t faults){
@@ -49,8 +53,8 @@ void BMS::setFaults(uint8_t faults){
 }
 
 void BMS::update() {
-    compute_cell_stats();
     compute_temps();
+    compute_cell_stats();
     res_.faults = faults_;
 }
 
@@ -107,7 +111,7 @@ void BMS::compute_cell_stats() {
 }
 
 void BMS::compute_temps() {
-    if (!have_ntc_volts_) {
+    if (!have_ntc_counts_) {
         res_.avg_C = 0.f;
         res_.high_C = -1000.f;
         res_.high_temp_idx = 0;
@@ -116,33 +120,52 @@ void BMS::compute_temps() {
     }
 
     float sum = 0.f;
+    uint8_t used = 0;
     res_.high_C = -1000.f;
     res_.high_temp_idx = 0;
 
-    for (uint8_t i=0;i<5;++i)
-        res_.ntc_C[i] = ntc_to_C(ntc_V_[i]);
+    for (uint8_t i = 0; i < 6; ++i) {
+        res_.ntc_C[i] = ntc_to_C(ntc_counts_[i]);
+    }
 
-    for (uint8_t i=0;i<num_cells_; ++i) {
+    for (uint8_t i = 0; i < 6; ++i) {
+        if (!temp_use_[i]) continue;
         float T = res_.ntc_C[i];
+        if (!std::isfinite(T)) continue;
         sum += T;
+        ++used;
         if (T > res_.high_C) {
             res_.high_C = T;
             res_.high_temp_idx = i;
         }
     }
 
-    res_.avg_C = sum / float(num_cells_);
+    res_.avg_C = (used > 0) ? (sum / float(used)) : NAN;
 }
 
-float BMS::ntc_to_C(float v_out) const {
-    if (v_out < 0.001f) return 999.f;
+float BMS::ntc_to_C(uint16_t adc) const {
+    // 12-bit ADC range: 0 to 4095
+    if (adc == 0 || adc >= 4095) {
+        return NAN;  // invalid / out of range
+    }
 
-    // R_therm (kΩ) = (33 / Vout) - 10, using your divider model
-    float r_therm = (33.0f / v_out) - tp_.rfix_k;
-    float lnR = std::log(r_therm);
+    // Divider: NTC on top, 10k on bottom
+    // R_ntc = R_bottom * (4095/adc - 1)
+    constexpr float R_BOTTOM = 10000.0f;
+    float R_ntc = R_BOTTOM * (4095.0f / static_cast<float>(adc) - 1.0f);
 
-    float invT = tp_.A + tp_.B*lnR + tp_.C*lnR*lnR*lnR;
-    return 1.0f / invT - 273.15f;
+    // Steinhart-Hart coefficients
+    constexpr float A = 0.0008929776265041391f;
+    constexpr float B = 0.000250374123231943f;
+    constexpr float C = 1.980949711932094e-07f;
+
+    float lnR = logf(R_ntc);
+
+    // 1/T = A + B*ln(R) + C*(ln(R))^3
+    float invT = A + B * lnR + C * lnR * lnR * lnR;
+
+    float T_K = 1.0f / invT;
+    return T_K - 273.15f;
 }
 
 

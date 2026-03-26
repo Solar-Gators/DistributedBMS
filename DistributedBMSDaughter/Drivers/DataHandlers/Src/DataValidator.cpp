@@ -29,10 +29,10 @@
  }
  
 uint8_t DataValidator::validateCellVoltages(
-     const std::array<uint16_t, 5>& voltages_mV) {
+     const std::array<uint16_t, 6>& voltages_mV) {
      
      // Check range for each cell
-     for (size_t i = 0; i < 5; ++i) {
+     for (size_t i = 0; i < 6; ++i) {
          if (voltages_mV[i] < 200) continue; // Skip unused cells
          
          if (voltages_mV[i] < config_.min_cell_voltage_mV){
@@ -45,10 +45,10 @@ uint8_t DataValidator::validateCellVoltages(
      return(Valid);
  }
 uint8_t DataValidator::validateADCReadings(
-     const std::array<uint16_t, 5>& adc_values) {
+     const std::array<uint16_t, 6>& adc_values) {
      
 	  // Check range for each cell
-	   for (size_t i = 0; i < 5; ++i) {
+	   for (size_t i = 0; i < 6; ++i) {
 
 		   if (adc_values[i] < config_.min_adc_value){
 			   return(To_Low);

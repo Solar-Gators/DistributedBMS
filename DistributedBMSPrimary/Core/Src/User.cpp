@@ -292,9 +292,9 @@ void setup()
 
     // Configure BMS thresholds (optional - defaults are set)
     BmsManager::Config config;
-    config.cell_overvoltage_mV = 4200;
+    config.cell_overvoltage_mV = 4220;
     config.cell_undervoltage_mV = 2500;
-    config.overtemp_C = 45.0f;
+    config.overtemp_C = 100.0f;
     config.overcurrent_A = 100.0f;
     config.aux_overcurrent_A = 50.0f;
     // Current measurement calibration - adjust based on your hardware
@@ -305,7 +305,7 @@ void setup()
 
     // Debug mode (WARNING: Disables safety features - for testing only!)
     // Uncomment to enable:
-    // bms_manager->setDebugMode(true, true, true);  // Enable debug, force contactors closed, disable faults
+     bms_manager->setDebugMode(true, true, true);  // Enable debug, force contactors closed, disable faults
     // bms_manager->setDebugMode(true, false, true); // Enable debug, disable faults only
     // bms_manager->setDebugMode(true, true, false); // Enable debug, force contactors only
 

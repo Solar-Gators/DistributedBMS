@@ -39,7 +39,7 @@ public:
         uint8_t  high_cell_phys_idx = 0;
         uint8_t  low_cell_phys_idx  = 0;
 
-        std::array<float,5> ntc_C{};
+        std::array<float,6> ntc_C{};
         float avg_C = 0.0f;
         float high_C = -1000.0f;
         uint8_t high_temp_idx = 0;
@@ -54,9 +54,9 @@ public:
     void set_num_cells(uint8_t n);
     uint8_t num_cells() const;
 
-    void set_cell_mV(const std::array<uint16_t,5>& mV);
-    void set_ntc_volts(const std::array<float,5>& v);
-    void set_ntc_counts(const std::array<uint16_t,5>& counts);
+    void set_cell_mV(const std::array<uint16_t,6>& mV);
+    void set_ntc_volts(const std::array<float,6>& v);
+    void set_ntc_counts(const std::array<uint16_t,6>& counts);
 
     void setFaults(uint8_t faults);
 
@@ -78,17 +78,19 @@ private:
     ThermParams tp_;
     uint8_t num_cells_ = 4;
     uint8_t faults_ = 0;
-    std::array<uint8_t,5> cell_phys_map_{{0,1,2,4,255}};
-    std::array<bool,5> temp_use_{{true,true,true,true,true}};
-    std::array<uint16_t,5> cell_mV_{};
-    std::array<float,5> ntc_V_{};
+    std::array<uint8_t,6> cell_phys_map_{{0,1,2,4,255,255}};
+    std::array<bool,6> temp_use_{{true,true,true,true,true,true}};
+    std::array<uint16_t,6> cell_mV_{};
+    std::array<float,6> ntc_V_{};
     bool have_ntc_volts_ = false;
+    std::array<uint16_t,6> ntc_counts_{};
+    bool have_ntc_counts_ = false;
     Results res_;
 
     static bool is_valid_slot(uint8_t idx);
     void compute_cell_stats();
     void compute_temps();
-    float ntc_to_C(float v_out) const;
+    float ntc_to_C(uint16_t adc) const;
 
 };
 

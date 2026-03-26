@@ -22,10 +22,17 @@
 namespace BmsCanProtocol {
 
 // ========== CAN ID Allocation ==========
-// Base ID: 0x180 (Primary BMS node)
-// Range: 0x180 - 0x1FF (128 IDs available)
+// ID-based: each CAN ID maps to a single message format.
+// Vehicle specification IDs (e.g. 0x040) + Primary BMS node IDs (0x180+).
 
 enum CanId : uint16_t {
+    // Vehicle / specification IDs (ID-based, not device-based)
+    BMS_STATUS           = 0x040,  // BMS Status: faults, contactors, daughter boards (From: BMS, To: Rear VCU, Telemetry, Steeringwheel)
+    BMS_BATTERY_VOLTAGE  = 0x041,  // Battery Voltage: pack + high/low cell voltages (From: BMS, To: Telemetry, Steering wheel)
+    BMS_BATTERY_TEMPERATURE = 0x042,  // Battery Temperature: high/avg temp (From: BMS, To: Telemetry, Steering wheel)
+    BMS_BATTERY_CURRENT     = 0x043,  // Battery Current: float in A (From: BMS, To: Telemetry, Steering wheel)
+
+    // Primary BMS node IDs (0x180 - 0x1FF)
     // Periodic Status Messages (10ms - 100ms)
     BMS_HEARTBEAT        = 0x180,  // Heartbeat/status (100ms)
     BMS_PACK_STATUS      = 0x181,  // Pack voltage, current, SOC (50ms)
@@ -50,6 +57,63 @@ enum CanId : uint16_t {
 };
 
 // ========== Message Types ==========
+
+// BMS_STATUS (0x040) - 8 bytes
+// From: BMS, To: Rear VCU, Telemetry, Steeringwheel
+// Spec fault codes: NONE=0, OVERVOLTAGE=0x0001, UNDERVOLTAGE=0x0002, CELL_IMBALANCE=0x0004,
+//   OVERTEMPERATURE=0x0008, UNDERTEMPERATURE=0x0010, BATTERY_OVERCURRENT=0x0020
+enum BmsStatusFaultCode : uint16_t {
+    BMS_FAULT_NONE              = 0x0000,
+    BMS_FAULT_OVERVOLTAGE       = 0x0001,
+    BMS_FAULT_UNDERVOLTAGE     = 0x0002,
+    BMS_FAULT_CELL_IMBALANCE   = 0x0004,
+    BMS_FAULT_OVERTEMPERATURE  = 0x0008,
+    BMS_FAULT_UNDERTEMPERATURE = 0x0010,
+    BMS_FAULT_BATTERY_OVERCURRENT = 0x0020,
+};
+struct BmsStatusMsg {
+    uint16_t bms_faults;           // BMS Faults (Bytes 0-1, MSB first)
+    uint8_t  contactors_state;     // 0=open, 1=closed
+    uint8_t  daughter_board_status; // Bitmap: bit N = module N online (from Secondary)
+    uint8_t  reserved[4];          // Bytes 4-7 reserved
+};
+
+// Battery Voltage (0x041) - 8 bytes
+// From: BMS, To: Telemetry, Steering wheel
+// Byte 0-1: Total pack voltage (UInt16, voltage * 100, MSB first)
+// Byte 2-3: Highest cell voltage (UInt16, mV, MSB first)
+// Byte 4:   Highest cell index
+// Byte 5-6: Lowest cell voltage (UInt16, mV, MSB first)
+// Byte 7:   Lowest cell index
+struct BatteryVoltageMsg {
+    uint16_t total_voltage_x100;   // Pack voltage * 100 (e.g. 90.67V -> 9067)
+    uint16_t highest_cell_mV;      // Highest cell voltage in mV
+    uint16_t lowest_cell_mV;       // Lowest cell voltage in mV
+    uint8_t  highest_cell_idx;     // Index of highest cell
+    uint8_t  lowest_cell_idx;      // Index of lowest cell
+};
+
+// Battery Temperature (0x042) - 8 bytes
+// From: BMS, To: Telemetry, Steering wheel
+// Byte 0-1: High Temp (UInt16, temp*10, MSB first, e.g. 456 = 45.6°C)
+// Byte 2:   High Temp Index (which module)
+// Byte 3-4: Avg Temp (UInt16, temp*10, MSB first)
+// Byte 5-7: Reserved
+struct BatteryTemperatureMsg {
+    int16_t  high_temp_C_x10;      // Highest temperature (°C * 10)
+    uint8_t  high_temp_idx;        // Module index with highest temp
+    int16_t  avg_temp_C_x10;       // Average temperature (°C * 10)
+    uint8_t  reserved[3];         // Bytes 5-7 reserved
+};
+
+// Battery Current (0x043) - 8 bytes
+// From: BMS, To: Telemetry, Steering wheel
+// Byte 0-3: Battery current (float, IEEE 754, big-endian MSB first)
+// Byte 4-7: Reserved
+struct BatteryCurrentMsg {
+    float current_A;               // Battery current in amperes (positive = discharge)
+    uint8_t reserved[4];          // Bytes 4-7 reserved
+};
 
 // BMS_HEARTBEAT (0x180) - 8 bytes
 struct HeartbeatMsg {
@@ -167,7 +231,11 @@ struct ConfigResponseMsg {
 
 class MessageEncoder {
 public:
-    // Encode messages to CAN frame
+    // Encode messages to CAN frame (ID-based)
+    static CanFdFrame encodeBmsStatus(const BmsStatusMsg& msg);
+    static CanFdFrame encodeBatteryVoltage(const BatteryVoltageMsg& msg);
+    static CanFdFrame encodeBatteryTemperature(const BatteryTemperatureMsg& msg);
+    static CanFdFrame encodeBatteryCurrent(const BatteryCurrentMsg& msg);
     static CanFdFrame encodeHeartbeat(const HeartbeatMsg& msg);
     static CanFdFrame encodePackStatus(const PackStatusMsg& msg);
     static CanFdFrame encodeTemperature(const TemperatureMsg& msg);

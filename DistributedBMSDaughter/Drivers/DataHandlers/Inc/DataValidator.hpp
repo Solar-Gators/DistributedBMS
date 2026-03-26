@@ -42,10 +42,10 @@ enum {
     const ValidationConfig& getConfig() const;
 
         // Cell voltage validation
-    uint8_t validateCellVoltages(const std::array<uint16_t, 5>& voltages_mV);
+    uint8_t validateCellVoltages(const std::array<uint16_t, 6>& voltages_mV);
 
     // ADC validation
-    uint8_t validateADCReadings(const std::array<uint16_t, 5>& adc_values);
+    uint8_t validateADCReadings(const std::array<uint16_t, 6>& adc_values);
 
 
 

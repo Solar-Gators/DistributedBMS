@@ -18,8 +18,21 @@
  */
 class BmsCanInterface {
 public:
+    // Lightweight debug view of last received CAN frame.
+    // This is intended to be inspected from a debugger.
+    struct RxDebug {
+        uint32_t last_id = 0;
+        uint8_t  last_dlc = 0;
+        uint8_t  last_data[8]{};
+        uint32_t rx_count = 0;   // Total frames seen since boot
+    };
+
     struct Config {
         // Transmission rates (ms)
+        uint32_t bms_status_period_ms = 50;       // BMS Status (0x040) every 50ms
+        uint32_t battery_voltage_period_ms = 50;     // Battery Voltage (0x041) every 50ms
+        uint32_t battery_temperature_period_ms = 50; // Battery Temperature (0x042) every 50ms
+        uint32_t battery_current_period_ms = 50;     // Battery Current (0x043) every 50ms
         uint32_t heartbeat_period_ms = 100;      // Heartbeat every 100ms
         uint32_t pack_status_period_ms = 50;     // Pack status every 50ms
         uint32_t temperature_period_ms = 100;     // Temperature every 100ms
@@ -46,6 +59,10 @@ public:
     void update(uint32_t now_ms);
     
     // Force transmission (for testing/debugging)
+    void sendBmsStatus();   // BMS Status 0x040 - faults, contactors, daughter boards
+    void sendBatteryVoltage();    // Battery Voltage 0x041 - pack + high/low cell
+    void sendBatteryTemperature(); // Battery Temperature 0x042 - high/avg temp
+    void sendBatteryCurrent();     // Battery Current 0x043 - current as float
     void sendHeartbeat();
     void sendPackStatus();
     void sendTemperature();
@@ -61,6 +78,7 @@ public:
     uint32_t txOkCount() const { return tx_ok_count_; }
     uint32_t txErrorCount() const { return tx_error_count_; }
     uint32_t rxCommandCount() const { return rx_command_count_; }
+    const RxDebug& rxDebug() const { return rx_debug_; }
     
 private:
     // Periodic transmission handlers
@@ -77,6 +95,10 @@ private:
     void handleConfigRequest(const BmsCanProtocol::ConfigRequestMsg& req);
     
     // Message creation helpers
+    BmsCanProtocol::BmsStatusMsg createBmsStatusMsg(uint32_t now_ms);
+    BmsCanProtocol::BatteryVoltageMsg createBatteryVoltageMsg();
+    BmsCanProtocol::BatteryTemperatureMsg createBatteryTemperatureMsg();
+    BmsCanProtocol::BatteryCurrentMsg createBatteryCurrentMsg();
     BmsCanProtocol::HeartbeatMsg createHeartbeatMsg(uint32_t now_ms);
     BmsCanProtocol::PackStatusMsg createPackStatusMsg();
     BmsCanProtocol::TemperatureMsg createTemperatureMsg();
@@ -94,8 +116,15 @@ private:
     CanFdBus& can_bus_;
     BmsManager& bms_manager_;
     Config config_;
+
+    // Debug snapshot of received frames (for use with debugger)
+    RxDebug rx_debug_{};
     
     // Timing
+    uint32_t last_bms_status_ms_ = 0;
+    uint32_t last_battery_voltage_ms_ = 0;
+    uint32_t last_battery_temperature_ms_ = 0;
+    uint32_t last_battery_current_ms_ = 0;
     uint32_t last_heartbeat_ms_ = 0;
     uint32_t last_pack_status_ms_ = 0;
     uint32_t last_temperature_ms_ = 0;

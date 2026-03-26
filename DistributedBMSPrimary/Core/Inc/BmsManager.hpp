@@ -60,7 +60,7 @@ public:
         // Voltage thresholds
         uint16_t cell_overvoltage_mV = 4200;
         uint16_t cell_undervoltage_mV = 2500;
-        uint16_t cell_imbalance_mV = 100;  // Max difference between cells
+        uint16_t cell_imbalance_mV = 400;  // Max difference between cells
 
         // Temperature thresholds
         float overtemp_C = 45.0f;
@@ -137,6 +137,10 @@ public:
     // ========== Status ==========
     bool areContactorsClosed() const;
     uint8_t getFanSpeed() const;  // 0-100% (PWM duty cycle)
+    /** Daughter board status bitmap for BMS Status CAN message.
+     *  Bit N = 1 if module N has valid recent data (from Secondary via UART).
+     *  Used in BMS_STATUS (0x040) Byte 3. */
+    uint8_t getDaughterBoardStatusBitmap(uint32_t now_ms) const;
     float getStateOfCharge() const;  // 0-100% (if implemented, currently returns 0)
 
     // ========== Hardware Control ==========

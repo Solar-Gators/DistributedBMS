@@ -226,6 +226,20 @@ uint8_t BmsManager::getFanSpeed() const
     return fan_speed_percent_;
 }
 
+uint8_t BmsManager::getDaughterBoardStatusBitmap(uint32_t now_ms) const
+{
+    uint8_t bitmap = 0;
+    if (!fleet_) return 0;
+    const uint32_t stale_ms = config_.data_stale_timeout_ms;
+    for (uint8_t i = 0; i < PrimaryBmsFleetCfg::MAX_MODULES; i++) {
+        const auto& m = fleet_->module(i);
+        if (m.valid && (now_ms - m.last_update_ms) <= stale_ms) {
+            bitmap |= (1u << i);
+        }
+    }
+    return bitmap;
+}
+
 float BmsManager::getStateOfCharge() const
 {
     // TODO: Implement SOC calculation if needed

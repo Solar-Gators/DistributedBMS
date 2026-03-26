@@ -4,12 +4,14 @@
  *  Created on: Aug 22, 2025
  *      Author: samrb
  */
-# define CELLS 5
+# define CELLS 6
+# define ADC_CHANNEL_COUNT 7
 
 #include "User.hpp"
 
 //Lower Level Drivers
-#include "BQ7692000.hpp"
+// #include "BQ7692000.hpp"
+#include "BQ76925PWR.hpp"
 
 //Data handlers
 #include "BMS.hpp"
@@ -28,7 +30,7 @@
 
 
 //hardware intialization
-BQ7692000PW bq(&hi2c2);
+BQ76925PWR bq(&hi2c2);
 static CanBus can1(hcan1);
 //CANDriver::CANDevice can(&hcan1);
 
@@ -42,8 +44,9 @@ DataValidator dataValidator;
 
 
 //ADC DMA stuff
+
 volatile bool TempDMAComplete;
-volatile uint16_t adc_buf[CELLS];
+volatile uint16_t adc_buf[ADC_CHANNEL_COUNT];
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	//move data between buffer arrays
 	TempDMAComplete = true;
@@ -55,6 +58,60 @@ static std::array<uint16_t, CELLS> cellVoltages{};
 static std::array<uint16_t, CELLS> cellTempADC{};
 
 bool debugMode;
+
+// Helper: read all cell voltages using BQ76925 VCOUT + ADC
+static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
+{
+    // Use MCU ADC reference (e.g. 3.3 V), not AFE VREF (3.0 V). AFE gain 0.6 from REF_SEL=1.
+    constexpr float ADC_FULL_SCALE = 4095.0f;
+    constexpr float ADC_VREF_V     = 3.3f;   // STM32 VREF+; match your hardware
+    constexpr float VCOUT_GAIN     = 0.6f;
+
+    for (uint8_t cell = 0; cell < CELLS; ++cell)
+    {
+        if (bq.setCellForVCOUT(cell) != HAL_OK)
+        {
+            return HAL_ERROR;
+        }
+
+        // Datasheet t_VCOUT: allow ~100 µs+ for VCOUT to settle after mux change.
+        HAL_Delay(10);
+
+        // Blocking single conversion on VCOUT channel (configured as sole regular channel).
+        if (HAL_ADC_Start(&hadc1) != HAL_OK)
+        {
+            return HAL_ERROR;
+        }
+        if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) != HAL_OK)
+        {
+            HAL_ADC_Stop(&hadc1);
+            return HAL_ERROR;
+        }
+
+        uint16_t vcout_counts = static_cast<uint16_t>(HAL_ADC_GetValue(&hadc1));
+        HAL_ADC_Stop(&hadc1);
+
+        if (HAL_ADC_Start(&hadc1) != HAL_OK)
+		{
+			return HAL_ERROR;
+		}
+		if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) != HAL_OK)
+		{
+			HAL_ADC_Stop(&hadc1);
+			return HAL_ERROR;
+		}
+
+		vcout_counts = static_cast<uint16_t>(HAL_ADC_GetValue(&hadc1));
+		HAL_ADC_Stop(&hadc1);
+
+        float v_vcout = (static_cast<float>(vcout_counts) / ADC_FULL_SCALE) * ADC_VREF_V;
+        float v_cell  = v_vcout / VCOUT_GAIN;
+
+        cell_mV[cell] = static_cast<uint16_t>(v_cell * 1000.0f + 0.5f);
+    }
+
+    return HAL_OK;
+}
 
 static void CanErrorCallback(CanBus& can, uint32_t err)
 {
@@ -113,30 +170,37 @@ void StartDefaultTask(void *argument)
 	{
 
 		osMutexAcquire(bmsMutex_id, osWaitForever);
-		//Get Pack and cell voltages
-		if (bq.getVC(cellVoltages) != HAL_OK)
+		// Get pack and cell voltages via BQ76925 VCOUT + MCU ADC
+		/*
+		if (readCellsFromAFE(cellVoltages) != HAL_OK)
 		{
 			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
 		}
 		else
 		{
 			faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-			if(dataValidator.validateCellVoltages(cellVoltages) == 0){
+			if (dataValidator.validateCellVoltages(cellVoltages) == 0)
+			{
 				bms.set_cell_mV(cellVoltages);
 				faultManager.clearFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
-			}else{
+			}
+			else
+			{
 				faultManager.setFault(FaultManager::FaultType::BQ76920_RESULT_ERROR);
 			}
-
 		}
+		*/
 		osMutexRelease(bmsMutex_id);
 
 		//read tempatures
 		TempDMAComplete = false;
-		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, CELLS);
+		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_CHANNEL_COUNT);
 		while (!TempDMAComplete) {}
 
-		for (int i = 0; i < CELLS; i++) cellTempADC[i] = adc_buf[i];
+		for (int i = 0; i < CELLS-1; i++){
+			cellTempADC[i] = adc_buf[i];
+		}
+        cellTempADC[5] = adc_buf[6];
 
 		if(dataValidator.validateADCReadings(cellTempADC) == 0){
 			bms.set_ntc_counts(cellTempADC);
@@ -192,6 +256,8 @@ void StartVoltageTask(void *argument)
         tx_ok &= (can1.sendStd(DeviceConfig::CAN_ID,
                                highTemp.bytes,
                                highTemp.dlc) == CanBus::Result::Ok);
+
+
 
 
         /* ---------------- Fault handling ---------------- */
