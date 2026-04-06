@@ -1,22 +1,21 @@
-// CanFrames.hpp
+#pragma once
 
 #include "BMS.hpp"
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <bit>
 
 namespace CanFrames {
 
 struct Frame8 {
-    std::array<uint8_t,8> bytes{};
+    std::array<uint8_t, 8> bytes{};
     uint8_t dlc = 8;
 };
 
 inline Frame8 make_high_temp(const BMS::Results& r) {
     Frame8 f{};
-    f.bytes[0] = 0; // type
-    std::memcpy(&f.bytes[1], &r.high_C, 4);  // pack float
+    f.bytes[0] = 0;
+    std::memcpy(&f.bytes[1], &r.high_C, 4);
     f.bytes[5] = r.high_temp_idx;
     return f;
 }
@@ -44,6 +43,4 @@ inline Frame8 make_average_stats(const BMS::Results& r) {
     return f;
 }
 
-
-
-} // namespace CanFrames
+}  // namespace CanFrames

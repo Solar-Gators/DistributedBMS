@@ -1,0 +1,228 @@
+#include "BmsCanProtocol.hpp"
+
+#include <cstring>
+
+namespace BmsCanProtocol {
+
+namespace {
+
+BmsCanFrame makeStd(uint16_t id) {
+    BmsCanFrame frame{};
+    frame.extended = false;
+    frame.id = id;
+    frame.dlc = 8;
+    return frame;
+}
+
+}  // namespace
+
+BmsCanFrame MessageEncoder::encodeBmsStatus(const BmsStatusMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_STATUS);
+    frame.data[0] = static_cast<uint8_t>((msg.bms_faults >> 8) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>(msg.bms_faults & 0xFF);
+    frame.data[2] = msg.contactors_state;
+    frame.data[3] = msg.daughter_board_status;
+    frame.data[4] = 0;
+    frame.data[5] = 0;
+    frame.data[6] = 0;
+    frame.data[7] = 0;
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeBatteryVoltage(const BatteryVoltageMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_BATTERY_VOLTAGE);
+    frame.data[0] = static_cast<uint8_t>((msg.total_voltage_x100 >> 8) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>(msg.total_voltage_x100 & 0xFF);
+    frame.data[2] = static_cast<uint8_t>((msg.highest_cell_mV >> 8) & 0xFF);
+    frame.data[3] = static_cast<uint8_t>(msg.highest_cell_mV & 0xFF);
+    frame.data[4] = msg.highest_cell_idx;
+    frame.data[5] = static_cast<uint8_t>((msg.lowest_cell_mV >> 8) & 0xFF);
+    frame.data[6] = static_cast<uint8_t>(msg.lowest_cell_mV & 0xFF);
+    frame.data[7] = msg.lowest_cell_idx;
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeBatteryTemperature(const BatteryTemperatureMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_BATTERY_TEMPERATURE);
+    frame.data[0] = static_cast<uint8_t>((msg.high_temp_C_x10 >> 8) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>(msg.high_temp_C_x10 & 0xFF);
+    frame.data[2] = msg.high_temp_idx;
+    frame.data[3] = static_cast<uint8_t>((msg.avg_temp_C_x10 >> 8) & 0xFF);
+    frame.data[4] = static_cast<uint8_t>(msg.avg_temp_C_x10 & 0xFF);
+    frame.data[5] = 0;
+    frame.data[6] = 0;
+    frame.data[7] = 0;
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeBatteryCurrent(const BatteryCurrentMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_BATTERY_CURRENT);
+    uint32_t bits;
+    std::memcpy(&bits, &msg.current_A, sizeof(float));
+    frame.data[0] = static_cast<uint8_t>((bits >> 24) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>((bits >> 16) & 0xFF);
+    frame.data[2] = static_cast<uint8_t>((bits >> 8) & 0xFF);
+    frame.data[3] = static_cast<uint8_t>(bits & 0xFF);
+    frame.data[4] = 0;
+    frame.data[5] = 0;
+    frame.data[6] = 0;
+    frame.data[7] = 0;
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeHeartbeat(const HeartbeatMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_HEARTBEAT);
+    frame.data[0] = msg.node_id;
+    frame.data[1] = msg.state;
+    frame.data[2] = msg.fault_count;
+    frame.data[3] = msg.warning_count;
+    packUint16(&frame.data[4], msg.uptime_s);
+    packUint16(&frame.data[6], msg.sequence);
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodePackStatus(const PackStatusMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_PACK_STATUS);
+    packUint16(&frame.data[0], msg.pack_voltage_mV);
+    packInt16(&frame.data[2], msg.pack_current_mA);
+    packUint16(&frame.data[4], msg.soc_percent_x10);
+    packUint16(&frame.data[6], msg.soh_percent_x10);
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeTemperature(const TemperatureMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_TEMPERATURE);
+    packInt16(&frame.data[0], msg.highest_temp_C_x10);
+    packInt16(&frame.data[2], msg.lowest_temp_C_x10);
+    packInt16(&frame.data[4], msg.avg_temp_C_x10);
+    frame.data[6] = msg.highest_temp_idx;
+    frame.data[7] = msg.lowest_temp_idx;
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeCellVoltages(const CellVoltagesMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_CELL_VOLTAGES);
+    packUint16(&frame.data[0], msg.highest_cell_mV);
+    packUint16(&frame.data[2], msg.lowest_cell_mV);
+    packUint16(&frame.data[4], msg.avg_cell_mV);
+    frame.data[6] = msg.highest_cell_idx;
+    frame.data[7] = msg.lowest_cell_idx;
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeFaultStatus(const FaultStatusMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_FAULT_STATUS);
+    packUint16(&frame.data[0], msg.active_faults);
+    packUint16(&frame.data[2], msg.fault_count);
+    frame.data[4] = msg.critical_fault;
+    frame.data[5] = msg.fault_code;
+    packUint16(&frame.data[6], msg.fault_timestamp_s);
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeWarningStatus(const WarningStatusMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_WARNING_STATUS);
+    packUint16(&frame.data[0], msg.active_warnings);
+    frame.data[2] = msg.warning_count;
+    frame.data[3] = msg.reserved;
+    packUint32(&frame.data[4], msg.reserved2);
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeStateChange(const StateChangeMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_STATE_CHANGE);
+    frame.data[0] = msg.old_state;
+    frame.data[1] = msg.new_state;
+    packUint16(&frame.data[2], msg.state_duration_ms);
+    packUint32(&frame.data[4], msg.timestamp_ms);
+    return frame;
+}
+
+BmsCanFrame MessageEncoder::encodeConfigResponse(const ConfigResponseMsg& msg) {
+    BmsCanFrame frame = makeStd(BMS_CONFIG_RESPONSE);
+    frame.data[0] = msg.response_type;
+    frame.data[1] = msg.reserved;
+    packUint16(&frame.data[2], msg.cell_overvoltage_mV);
+    packUint16(&frame.data[4], msg.cell_undervoltage_mV);
+    packUint16(&frame.data[6], msg.cell_imbalance_mV);
+    return frame;
+}
+
+void MessageEncoder::packUint16(uint8_t* buf, uint16_t value) {
+    buf[0] = static_cast<uint8_t>(value & 0xFF);
+    buf[1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+}
+
+void MessageEncoder::packInt16(uint8_t* buf, int16_t value) {
+    packUint16(buf, static_cast<uint16_t>(value));
+}
+
+void MessageEncoder::packUint32(uint8_t* buf, uint32_t value) {
+    buf[0] = static_cast<uint8_t>(value & 0xFF);
+    buf[1] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    buf[2] = static_cast<uint8_t>((value >> 16) & 0xFF);
+    buf[3] = static_cast<uint8_t>((value >> 24) & 0xFF);
+}
+
+bool MessageDecoder::decodeCommand(const BmsCanFrame& frame, CommandMsg& msg) {
+    if (frame.id != BMS_COMMAND || frame.dlc < 1) {
+        return false;
+    }
+    msg.command_type = frame.data[0];
+    msg.parameter = unpackUint16(&frame.data[2]);
+    return true;
+}
+
+bool MessageDecoder::decodeConfigRequest(const BmsCanFrame& frame, ConfigRequestMsg& msg) {
+    if (frame.id != BMS_CONFIG_REQUEST || frame.dlc < 1) {
+        return false;
+    }
+    msg.request_type = frame.data[0];
+    return true;
+}
+
+CanId MessageDecoder::getMessageType(uint16_t can_id) {
+    if (can_id == BMS_STATUS) {
+        return BMS_STATUS;
+    }
+    if (can_id == BMS_BATTERY_VOLTAGE) {
+        return BMS_BATTERY_VOLTAGE;
+    }
+    if (can_id == BMS_BATTERY_TEMPERATURE) {
+        return BMS_BATTERY_TEMPERATURE;
+    }
+    if (can_id == BMS_BATTERY_CURRENT) {
+        return BMS_BATTERY_CURRENT;
+    }
+    if (can_id >= BMS_HEARTBEAT && can_id <= BMS_CELL_VOLTAGES) {
+        return static_cast<CanId>(can_id);
+    }
+    if (can_id >= BMS_FAULT_STATUS && can_id <= BMS_STATE_CHANGE) {
+        return static_cast<CanId>(can_id);
+    }
+    if (can_id == BMS_COMMAND) {
+        return BMS_COMMAND;
+    }
+    if (can_id == BMS_CONFIG_REQUEST) {
+        return BMS_CONFIG_REQUEST;
+    }
+    if (can_id == BMS_CONFIG_RESPONSE) {
+        return BMS_CONFIG_RESPONSE;
+    }
+    return BMS_HEARTBEAT;
+}
+
+uint16_t MessageDecoder::unpackUint16(const uint8_t* buf) {
+    return static_cast<uint16_t>(buf[0]) | (static_cast<uint16_t>(buf[1]) << 8);
+}
+
+int16_t MessageDecoder::unpackInt16(const uint8_t* buf) {
+    return static_cast<int16_t>(unpackUint16(buf));
+}
+
+uint32_t MessageDecoder::unpackUint32(const uint8_t* buf) {
+    return static_cast<uint32_t>(buf[0]) | (static_cast<uint32_t>(buf[1]) << 8) |
+           (static_cast<uint32_t>(buf[2]) << 16) | (static_cast<uint32_t>(buf[3]) << 24);
+}
+
+}  // namespace BmsCanProtocol

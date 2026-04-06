@@ -15,7 +15,7 @@
 
 //Data handlers
 #include "BMS.hpp"
-#include "CanFrame.cpp"
+#include "CanFrame.hpp"
 #include "CanBus.hpp"
 #include "FaultManager.hpp"
 #include "DataValidator.hpp"
@@ -59,7 +59,8 @@ static std::array<uint16_t, CELLS> cellTempADC{};
 
 bool debugMode;
 
-// Helper: read all cell voltages using BQ76925 VCOUT + ADC
+#if 0
+// Real VCOUT + ADC — change to `#if 1` when voltage measurement is ready.
 static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
 {
     // Use MCU ADC reference (e.g. 3.3 V), not AFE VREF (3.0 V). AFE gain 0.6 from REF_SEL=1.
@@ -112,6 +113,7 @@ static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
 
     return HAL_OK;
 }
+#endif
 
 static void CanErrorCallback(CanBus& can, uint32_t err)
 {
@@ -170,8 +172,19 @@ void StartDefaultTask(void *argument)
 	{
 
 		osMutexAcquire(bmsMutex_id, osWaitForever);
-		// Get pack and cell voltages via BQ76925 VCOUT + MCU ADC
-		/*
+
+		// Synthetic cell voltages (mV) for bring-up until VCOUT+ADC is restored.
+		// Enable `readCellsFromAFE` (`#if 1` at its `#if 0`) and use the `#if 0` production block below instead of this.
+		{
+			static constexpr std::array<uint16_t, CELLS> kTestCell_mV = {{
+				3700u, 3710u, 3690u, 3720u, 3705u, 3695u,
+			}};
+			cellVoltages = kTestCell_mV;
+			bms.set_cell_mV(cellVoltages);
+		}
+
+#if 0
+		// Production path: readCellsFromAFE + DataValidator (enable readCellsFromAFE first).
 		if (readCellsFromAFE(cellVoltages) != HAL_OK)
 		{
 			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
@@ -189,7 +202,7 @@ void StartDefaultTask(void *argument)
 				faultManager.setFault(FaultManager::FaultType::BQ76920_RESULT_ERROR);
 			}
 		}
-		*/
+#endif
 		osMutexRelease(bmsMutex_id);
 
 		//read tempatures
