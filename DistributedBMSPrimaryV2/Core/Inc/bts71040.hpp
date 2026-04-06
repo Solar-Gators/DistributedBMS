@@ -5,8 +5,8 @@
  *      Author: ahmed
  */
 
-#ifndef INC_CONTACTORS_HPP_
-#define INC_CONTACTORS_HPP_
+#ifndef INC_BTS71040_HPP_
+#define INC_BTS71040_HPP_
 
 
 #pragma once
@@ -157,4 +157,4 @@ private:
 
 
 
-#endif /* INC_CONTACTORS_HPP_ */
+#endif /* INC_BTS71040_HPP_ */

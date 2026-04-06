@@ -8,7 +8,9 @@ extern "C" {
 
 class INA226 {
 public:
-    static constexpr uint8_t I2C_ADDR_BASE = 0x40;
+    // 7-bit base addresses (before HAL shift)
+    static constexpr uint8_t I2C_ADDR_BASE = 0x40;   // A0/A1 = GND, see datasheet
+    static constexpr uint8_t I2C_ADDR_BASE = 0x44;   // A1=Vcc, A0=GND
 
     struct Measurement {
         float shunt_V = 0.0f;

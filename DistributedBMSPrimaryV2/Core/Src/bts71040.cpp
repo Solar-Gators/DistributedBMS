@@ -9,7 +9,7 @@
 #define SRC_BTS71040_CPP_
 
 
-#include "Contactors.hpp"
+#include <bts71040.hpp>
 
 static inline void spin_nops(uint16_t n) { for (uint16_t i=0;i<n;++i) __NOP(); }
 

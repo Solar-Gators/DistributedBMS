@@ -72,12 +72,12 @@ HAL_StatusTypeDef INA226::readShuntVoltage(float& volts) {
 
 HAL_StatusTypeDef INA226::readBusVoltage(float& volts) {
     uint16_t raw = 0;
-    const HAL_StatusTypeDef st = readReg16(REG_BUS_V, raw);
-    if (st != HAL_OK) {
-        return st;
-    }
-    const uint16_t v_raw = raw >> 3;
-    volts = static_cast<float>(v_raw) * 1.25e-3f;
+    HAL_StatusTypeDef st = readReg16(REG_BUS_V, raw);
+    if (st != HAL_OK) return st;
+
+    // Shift right 3; LSB = 1.25 mV
+    //uint16_t v_raw = raw >> 3;
+    volts = static_cast<float>(raw) * 1.25e-3f;
     return HAL_OK;
 }
 
