@@ -8,6 +8,7 @@ extern "C" {
 
 class ADS1115 {
 public:
+    // 7-bit I2C addresses (ADDR pin wiring); HAL uses addr << 1.
     enum class Addr7 : uint8_t {
         GND = 0x48,
         VDD = 0x49,
@@ -15,6 +16,7 @@ public:
         SCL = 0x4B
     };
 
+    // PGA full-scale ranges → bits [11:9] in config register
     enum class Pga : uint8_t {
         FS_6_144V = 0,
         FS_4_096V = 1,
