@@ -82,11 +82,12 @@ void StartDefaultTask(void *argument);
   * @brief  The application entry point.
   * @retval int
   */
+
+
 int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -159,7 +160,6 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
