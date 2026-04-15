@@ -1,36 +1,30 @@
 # Distributed BMS Project
 
-A distributed Battery Management System (BMS) design based arround a series of daughter boards which collect tempature and voltage data and communicate these back to a central BMS board. The central BMS board monitors current and controlls battery fans and contactors tacots as well as a few other tasks. All boards use STM32 Microcontollers and communciate over CAN Bus
+A distributed Battery Management System (BMS) design based arround a series of daughter boards which collect tempature and voltage data and communicate these back to a central BMS board. The central BMS board monitors current and controlls battery fans and contactors as well as a few other tasks. All boards use STM32 Microcontollers and communciate over CAN Bus
 
 ## Project Overview
 
 This project implements a distributed BMS architecture consisting of:
 
 - **Daughter Boards** (`DistributedBMSDaughter`): Monitor small groups of cells (3-5 cells each)
-- **Secondary MCU** (`DistributedBMSSecondary`): Aggregates data from daughter boards and communicates with main controller
-- **primary MCU** (`DistributedBMSPrimary`): Run Core BMS functionality, making fault decisions, controlling contactors, controlling battery fans, and communicating with the rest of the car.
+- **primary MCU** (`DistributedBMSPrimaryV2`): Aggregates data from daughter boards, Run Core BMS functionality, making fault decisions, controlling contactors, controlling battery fans, and communicating with the rest of the car.
 
 ## Architecture
 
-Each Daughter Board PCB monitors the tempature and voltage of between 3-5 battery modules, and communicates this over CAN to the secondary STM on the central PCB. The secondary STM then aggregates all this data, and passes it to the primary STM on the central board over UART. The primary STM is responsible for all the control tasks and communicating with the rest of the car.
+Each Daughter Board PCB monitors the tempature and voltage of between 3-6 battery modules, and communicates this over CAN to the STM on the central PCB. The primary STM is responsible for all the control tasks and communicating with the rest of the car.
 
 ## Key Features
 
 ### Daughter Board Features
-- **Cell Voltage Monitoring**: Individual cell voltage measurement using BQ76920 IC
+- **Cell Voltage Monitoring**: Individual cell voltage measurement using BQ76925 IC
 - **Cell Temperature Monitoring**: NTC thermistor temperature sensing
 - **CAN Communication**: Real-time data transmission to central BMS
 - **Fault Management**: Comprehensive system health monitoring
 - **Data Validation**: Robust data integrity checking
-- **Configurable**: Support for 3-5 cell configurations
-
-### Secondary Board Features
-- **Data Aggregation**: Collects data from multiple daughter boards
-- **Fleet Management**: Tracks multiple BMS modules
-- **UART Communication**: Interfaces with main controller
-- **CAN Bus Management**: Handles multiple CAN nodes
+- **Configurable**: Support for 3-6 cell configurations
 
 ### Primary Board Features
+- **Data Aggregation**: Collects data from multiple daughter boards
 - **Core BMS functality**: Decides weather to open or close contactors based on battery data
 - **Fan Speed Control**: Controls the speed of up to 4 battery fans
 - **CAN Flexible Data Rate Comms**: Handles CAN communication with the rest of the car
@@ -46,10 +40,6 @@ Each Daughter Board PCB monitors the tempature and voltage of between 3-5 batter
 - **Temperature**: NTC thermistors
 - **Power**: 3.3V operation
 
-### Secondary Board
-- **MCU**: STM32L433CCTx
-- **Communication**: CAN transceiver, UART
-- **Power**: 3.3V operation
 
 ## Software Architecture
 

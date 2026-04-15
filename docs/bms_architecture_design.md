@@ -1,6 +1,6 @@
 # High-Level BMS Architecture Design
 
-**Date:** January 2025  
+**Date:** March 2026  
 **Purpose:** Design a comprehensive high-level BMS class to manage data storage, fault detection, state machine, and overall BMS functionality
 
 ---

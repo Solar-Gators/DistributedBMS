@@ -26,9 +26,9 @@ namespace DeviceConfig {
     // Calculated CAN ID
     static constexpr uint16_t CAN_ID = BASE_CAN_ID + DEVICE_NUMBER;
     
-    // Validation
-    static_assert(DEVICE_NUMBER >= 0 && DEVICE_NUMBER < MAX_DEVICES,
-                  "DEVICE_NUMBER must be between 1 and 8");
+    // Validation (0..7 → CAN IDs 0x100..0x107)
+    static_assert(DEVICE_NUMBER < MAX_DEVICES,
+                  "DEVICE_NUMBER must be 0 .. MAX_DEVICES-1");
     static_assert(CAN_ID <= 0x7FF, 
                   "Calculated CAN ID exceeds 11-bit limit");
     
