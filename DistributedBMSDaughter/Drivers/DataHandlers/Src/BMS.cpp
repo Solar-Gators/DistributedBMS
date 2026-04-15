@@ -55,6 +55,11 @@ void BMS::setFaults(uint8_t faults){
 void BMS::update() {
     compute_temps();
     compute_cell_stats();
+
+    // CODE BY JACK
+    copy_voltages_to_results();
+    // END OF CODE BY JACK
+
     res_.faults = faults_;
 }
 
@@ -168,6 +173,15 @@ float BMS::ntc_to_C(uint16_t adc) const {
     return T_K - 273.15f;
 }
 
+// CODE BY JACK
+void BMS::copy_voltages_to_results()
+{
+    for (uint8_t i = 0; i < 6; ++i)
+    {
+        res_.cell_voltages_mV[i] = cell_mV_[i];
+    }
 
+}
+// END OF CODE BY JACK
 
 

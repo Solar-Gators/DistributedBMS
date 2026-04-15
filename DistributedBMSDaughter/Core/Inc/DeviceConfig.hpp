@@ -16,7 +16,7 @@ namespace DeviceConfig {
     // ===================
     // Change this number to set the device ID for this daughter board
     // CAN ID will be automatically calculated as: BASE_CAN_ID + DEVICE_NUMBER
-    static constexpr uint8_t DEVICE_NUMBER = 0;  // Change this: 1, 2, 3, 4, 5, 6, 7, 8
+    static constexpr uint8_t DEVICE_NUMBER = 2;  // Change this: 1, 2, 3, 4, 5, 6, 7, 8
     
     // CAN ID Configuration
     // ===================

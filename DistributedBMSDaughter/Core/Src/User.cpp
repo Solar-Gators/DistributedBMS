@@ -222,6 +222,7 @@ void StartVoltageTask(void *argument)
 {
     for (;;)
     {
+
         /* ---------------- Acquire BMS data ---------------- */
         osMutexAcquire(bmsMutex_id, osWaitForever);
         bms.update();
@@ -241,13 +242,46 @@ void StartVoltageTask(void *argument)
         const auto avgStats     = CanFrames::make_average_stats(r);
         const auto voltExtremes = CanFrames::make_voltage_extremes(r);
         const auto highTemp     = CanFrames::make_high_temp(r);
+        // START OF CODE BY JACK
+        static uint8_t cell_msg_counter = 0; // This line defines our counter as starting at zero.
+        // END OF CODE BY JACK
 
         /* ---------------- Transmit frames ---------------- */
         bool tx_ok = true;
 
+        CanFrames::Frame8 cellVoltage{}; // This line like before creates a frame of 8 bits that will store all of our data.
+        switch (cell_msg_counter) // This line then checks what case is in cell_msg_counter or which message to select.
+        {
+        case 0: cellVoltage = CanFrames::make_voltage_messages(r); // This calls the make_voltage_messeges function in CanFrame.cpp (returning the values).
+        break; // This breaks the counter.
+
+        case 1: cellVoltage = CanFrames::make_voltage_message2(r);
+        break; // This breaks the counter.
+
+        case 2: cellVoltage = CanFrames::make_voltage_message3(r);
+        break; // This breaks the counter.
+
+        case 3: cellVoltage = CanFrames::make_voltage_message4(r);
+        break; // This breaks the counter.
+
+        case 4: cellVoltage = CanFrames::make_voltage_message5(r);
+        break; // This breaks the counter.
+
+        case 5: cellVoltage = CanFrames::make_voltage_message6(r);
+        break; // This breaks the counter.
+        }
+
+        // Ask Sam about this (purpose and function)
+
+        tx_ok &= (can1.sendStd(DeviceConfig::CAN_ID,
+     		                  cellVoltage.bytes,
+ 			                  cellVoltage.dlc) == CanBus::Result::Ok);
+
         tx_ok &= (can1.sendStd(DeviceConfig::CAN_ID,
                                avgStats.bytes,
                                avgStats.dlc) == CanBus::Result::Ok);
+
+        osDelay(10);
 
         tx_ok &= (can1.sendStd(DeviceConfig::CAN_ID,
                                voltExtremes.bytes,
@@ -257,8 +291,14 @@ void StartVoltageTask(void *argument)
                                highTemp.bytes,
                                highTemp.dlc) == CanBus::Result::Ok);
 
+       // ****************** START OF CODE BY JACK ******************
 
 
+
+       cell_msg_counter = ((cell_msg_counter + 1) % CELLS); // This line updates the counter by increasing cell_msg_counter by 1 sending the next message.
+       // Note that % CELLS was used to get the value to loop back around when the message hit 6.
+
+       //  ****************** END OF CODE BY JACK ******************
 
         /* ---------------- Fault handling ---------------- */
         if (!tx_ok) {
@@ -274,6 +314,7 @@ void StartVoltageTask(void *argument)
         if (faultManager.getFaultMask() == 0) {
             HAL_GPIO_TogglePin(GPIOB, OK_Pin);
         }
+
 
         osDelay(DeviceConfig::CYCLE_TIME_MS);
     }

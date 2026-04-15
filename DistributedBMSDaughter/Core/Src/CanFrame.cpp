@@ -44,4 +44,64 @@ inline Frame8 make_average_stats(const BMS::Results& r) {
     return f;
 }
 
+// ****************** START OF CODE BY JACK ******************
+inline Frame8 make_voltage_messages(const BMS::Results&r)
+{
+	Frame8 f{}; // Create empty 8-byte CAN frame
+	    f.bytes[0] = 3; // Tells that cell ID is 3 (Cell 0).
+	    f.bytes[1] = r.cell_voltages_mV[0] & 0xFF; // Defines cell 0 voltage low byte.
+	    f.bytes[2] = r.cell_voltages_mV[0] >> 8; // Defines cell 0 voltage high byte.
+	    std::memcpy(&f.bytes[3], &r.ntc_C[0], 4); // Defines Cell 0 temperature (float, bytes 3-6)
+	    return f; // Returns the frame.
+}
+
+inline Frame8 make_voltage_message2 (const BMS::Results&r)
+{
+	Frame8 f{};
+	    f.bytes[0] = 4;
+	    f.bytes[1] = r.cell_voltages_mV[1] & 0xFF;
+	    f.bytes[2] = r.cell_voltages_mV[1] >> 8;
+	    std::memcpy(&f.bytes[3], &r.ntc_C[1], 4);
+	    return f;
+}
+inline Frame8 make_voltage_message3 (const BMS::Results&r)
+{
+	Frame8 f{};
+	    f.bytes[0] = 5;
+	    f.bytes[1] = r.cell_voltages_mV[2] & 0xFF;
+	    f.bytes[2] = r.cell_voltages_mV[2] >> 8;
+	    std::memcpy(&f.bytes[3], &r.ntc_C[2], 4);
+	    return f;
+}
+inline Frame8 make_voltage_message4 (const BMS::Results&r)
+{
+	Frame8 f{};
+	    f.bytes[0] = 6;
+	    f.bytes[1] = r.cell_voltages_mV[3] & 0xFF;
+	    f.bytes[2] = r.cell_voltages_mV[3] >> 8;
+	    std::memcpy(&f.bytes[3], &r.ntc_C[3], 4);
+	    return f;
+}
+inline Frame8 make_voltage_message5 (const BMS::Results&r)
+{
+	Frame8 f{};
+	    f.bytes[0] = 7;
+	    f.bytes[1] = r.cell_voltages_mV[4] & 0xFF;
+	    f.bytes[2] = r.cell_voltages_mV[4] >> 8;
+	    std::memcpy(&f.bytes[3], &r.ntc_C[4], 4);
+	    return f;
+}
+inline Frame8 make_voltage_message6 (const BMS::Results&r)
+{
+	Frame8 f{};
+	    f.bytes[0] = 8;
+	    f.bytes[1] = r.cell_voltages_mV[5] & 0xFF;
+	    f.bytes[2] = r.cell_voltages_mV[5] >> 8;
+	    std::memcpy(&f.bytes[3], &r.ntc_C[5], 4);
+	    return f;
+
+}
+//  ****************** END OF CODE BY JACK ******************
+
+
 } // namespace CanFrames

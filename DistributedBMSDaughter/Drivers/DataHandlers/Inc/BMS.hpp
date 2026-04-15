@@ -46,6 +46,11 @@ public:
 
         uint8_t num_cells = 0;
         uint8_t faults = 0;
+
+        // CODE CHANGE BY JACK
+        // Purpose: To create an array of voltages for each of the 6 cells.
+        std::array<uint16_t, 6> cell_voltages_mV{};
+        // End of Changes
     };
 
     explicit BMS(uint8_t num_cells = 4, ThermParams tp = ThermParams{});
@@ -88,6 +93,11 @@ private:
     Results res_;
 
     static bool is_valid_slot(uint8_t idx);
+
+    // CODE BY JACK
+    void copy_voltages_to_results(); // This is the new function to copy the voltages to the results structure.
+    // END OF CODE BY JACK
+
     void compute_cell_stats();
     void compute_temps();
     float ntc_to_C(uint16_t adc) const;
