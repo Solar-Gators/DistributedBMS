@@ -29,7 +29,8 @@ static CanBus vehicle_can(hfdcan3);
 static BmsFleet fleet;
 
 static ADS1115 adc(&hi2c2, ADS1115::Addr7::GND, ADS1115::Pga::FS_4_096V, ADS1115::DataRate::SPS_128);
-static INA226 ina(&hi2c2, INA226::I2C_ADDR_BASE);
+static INA226 ina(&hi2c2, INA226::I2C_ADDR_DEVICE1);
+static INA226 ina2(&hi2c2, INA226::I2C_ADDR_DEVICE2);
 
 static BmsManager bms_manager(&fleet, &adc, &ina);
 static BmsCanInterface vehicle_iface(vehicle_can, bms_manager);
@@ -80,6 +81,7 @@ void setup() {
     (void)adc.init();
     /* Shunt / I_max must match hardware (legacy Primary used 20 mΩ, 100 A max). */
     (void)ina.init(0.02f, 100.0f);
+    (void)ina2.init(0.02f, 100.0f);
 
     bms_manager.setContactorGpio(IN2_GPIO_Port, IN2_Pin);
     bms_manager.setSecondContactorGpio(IN3_GPIO_Port, IN3_Pin);

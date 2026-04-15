@@ -9,8 +9,8 @@ extern "C" {
 class INA226 {
 public:
     // 7-bit base addresses (before HAL shift)
-    static constexpr uint8_t I2C_ADDR_BASE = 0x40;   // A0/A1 = GND, see datasheet
-    static constexpr uint8_t I2C_ADDR_BASE2 = 0x44;   // A1=Vcc, A0=GND
+    static constexpr uint8_t I2C_ADDR_DEVICE1 = 0x40;   // A0/A1 = GND, see datasheet
+    static constexpr uint8_t I2C_ADDR_DEVICE2 = 0x44;   // A1=Vcc, A0=GND
 
     struct Measurement {
         float shunt_V = 0.0f;
@@ -19,7 +19,7 @@ public:
         float power_W = 0.0f;
     };
 
-    INA226(I2C_HandleTypeDef* hi2c, uint8_t addr_7bit = I2C_ADDR_BASE);
+    INA226(I2C_HandleTypeDef* hi2c, uint8_t addr_7bit);
 
     HAL_StatusTypeDef init(float shunt_res_ohm, float max_current_A, uint16_t config = 0x4127);
 
