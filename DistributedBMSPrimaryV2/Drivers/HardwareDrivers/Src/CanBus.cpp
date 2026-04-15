@@ -10,6 +10,8 @@ uint8_t CanBus::s_instance_count_ = 0;
 namespace {
 
 uint8_t dlcCodeToDataBytes(uint32_t dlc_code) {
+    // CAN FD DLC decode per ISO 11898-1 mapping:
+    // 0..8 => 0..8 bytes, then 9..15 => 12/16/20/24/32/48/64 bytes.
     static const uint8_t kMap[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64};
     if (dlc_code < sizeof(kMap)) {
         return kMap[dlc_code];
@@ -19,6 +21,8 @@ uint8_t dlcCodeToDataBytes(uint32_t dlc_code) {
 
 /** Map payload length to FDCAN DLC register value (0..15). */
 uint32_t payloadLenToDlcCode(uint8_t len, bool allow_fd) {
+    // Convert requested payload length to the nearest valid DLC encoding.
+    // Classic CAN allows up to 8 bytes; CAN FD uses stepped payload sizes above 8.
     if (!allow_fd) {
         if (len > 8) {
             len = 8;
@@ -53,6 +57,8 @@ uint32_t payloadLenToDlcCode(uint8_t len, bool allow_fd) {
 }
 
 void padToDlc(uint8_t* dst, const uint8_t* src, uint8_t src_len, uint8_t dlc_bytes) {
+    // HAL expects exactly DLC-sized payload bytes in TX buffer.
+    // Zero-pad any unused bytes to avoid leaking stale stack data on the bus.
     if (src_len > dlc_bytes) {
         src_len = dlc_bytes;
     }
@@ -73,6 +79,7 @@ CanBus::CanBus(FDCAN_HandleTypeDef& hfdcan) : h_(hfdcan) {
 }
 
 bool CanBus::configureFilterAcceptAll() {
+    // Route all standard/extended IDs to RX FIFO0; remote frames are not rejected.
     return HAL_FDCAN_ConfigGlobalFilter(&h_,
                                         FDCAN_ACCEPT_IN_RX_FIFO0,
                                         FDCAN_ACCEPT_IN_RX_FIFO0,
@@ -99,6 +106,8 @@ bool CanBus::configureFilterStdMask(uint16_t filter_id, uint16_t mask, uint32_t 
 }
 
 bool CanBus::start() {
+    // RX FIFO0 new-message interrupt on line 0:
+    // 1) route interrupt group to line, 2) start peripheral, 3) enable notification.
     if (HAL_FDCAN_ConfigInterruptLines(&h_, FDCAN_IT_GROUP_RX_FIFO0, FDCAN_INTERRUPT_LINE0) != HAL_OK) {
         return false;
     }
@@ -122,6 +131,7 @@ CanBus::Result CanBus::addTx(const FDCAN_TxHeaderTypeDef& hdr, const uint8_t* pa
         return Result::Ok;
     }
     if (st == HAL_BUSY) {
+        // HAL_BUSY commonly means TX FIFO/queue is full at this instant.
         ++tx_err_;
         return Result::Busy;
     }
@@ -250,6 +260,7 @@ size_t CanBus::rx_dropped() const {
 }
 
 bool CanBus::rx_push_isr(const Frame& f) {
+    // Single-producer (ISR) ring buffer push.
     const uint8_t next = idx_next(rx_head_);
     if (next == rx_tail_) {
         ++rx_dropped_;
@@ -264,6 +275,7 @@ bool CanBus::rx_pop(Frame& out) {
     if (rx_head_ == rx_tail_) {
         return false;
     }
+    // Protect head/tail update against concurrent ISR writes.
     const uint32_t primask = __get_PRIMASK();
     __disable_irq();
     out = rx_[rx_tail_];
@@ -279,6 +291,7 @@ bool CanBus::read(Frame& out) {
 }
 
 void CanBus::onRxFifo0Pending() {
+    // Drain FIFO0 fully for this interrupt to minimize overrun risk.
     while (HAL_FDCAN_GetRxFifoFillLevel(&h_, FDCAN_RX_FIFO0) > 0) {
         FDCAN_RxHeaderTypeDef rh{};
         uint8_t buf[64]{};
@@ -302,6 +315,7 @@ void CanBus::onRxFifo0Pending() {
 
         const uint8_t nbytes = dlcCodeToDataBytes(rh.DataLength);
         f.len = nbytes;
+        // For RTR frames, len may be nonzero in header but data bytes are not meaningful.
         std::memcpy(f.data.data(), buf, nbytes);
 
         (void)rx_push_isr(f);
@@ -309,6 +323,7 @@ void CanBus::onRxFifo0Pending() {
 }
 
 void CanBus::dispatchRxFifo0FromIsr(FDCAN_HandleTypeDef* hfdcan) {
+    // Map HAL callback handle back to owning C++ CanBus instance.
     for (uint8_t i = 0; i < s_instance_count_; ++i) {
         CanBus* inst = s_instances_[i];
         if (inst != nullptr && hfdcan == inst->busHandle()) {

@@ -2,10 +2,11 @@
 
 #include <array>
 #include <cstdint>
+#include "PrimaryV2Contract.hpp"
 
 /** Matches legacy Primary MCU `FleetSummaryData` / `ModuleSummaryData` for BmsManager. */
 namespace PrimaryBmsFleetCfg {
-constexpr uint32_t STALE_MS = 2000;
+constexpr uint32_t STALE_MS = PrimaryV2Contract::DAUGHTER_STALE_TIMEOUT_MS;
 constexpr uint8_t MAX_MODULES = 8;
 }
 

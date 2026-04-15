@@ -1,6 +1,8 @@
 #pragma once
 
 #include "FleetSummary.hpp"
+#include "PrimaryV2Contract.hpp"
+#include "cmsis_os.h"
 #include "stm32g4xx_hal.h"
 
 #include <cstdint>
@@ -52,7 +54,9 @@ public:
         float current_hysteresis_A = 5.0f;
 
         uint32_t fault_recovery_time_ms = 5000;
-        uint32_t data_stale_timeout_ms = 5000;
+        uint32_t data_stale_timeout_ms = PrimaryV2Contract::DAUGHTER_STALE_TIMEOUT_MS;
+        uint32_t ads1115_read_period_ms = PrimaryV2Contract::ADS1115_READ_PERIOD_MS;
+        uint32_t ina226_read_period_ms = PrimaryV2Contract::INA226_READ_PERIOD_MS;
 
         uint8_t current_adc_channel = 0;
         float current_shunt_resistance_ohm = 0.001f;
@@ -74,7 +78,8 @@ public:
     void init();
     void update(uint32_t now_ms);
 
-    const FleetSummaryData& getFleetSummary() const;
+    /** Thread-safe snapshot (copies under fleet mutex when configured). */
+    FleetSummaryData getFleetSummary() const;
     float getBatteryCurrent_A() const;
     float getAuxCurrent_A() const;
     float getPackVoltage_V() const;
@@ -107,8 +112,12 @@ public:
     void setConfig(const Config& config);
     const Config& getConfig() const;
 
+    /** Protects BmsFleet reads/writes across CAN RX, fleet aggregate, and manager/vehicle tasks. */
+    void setFleetAccessMutex(osMutexId_t mutex_id);
+
     void setDebugMode(bool enabled, bool force_contactors = false, bool disable_faults = false);
     bool isDebugModeEnabled() const;
+    void setFanPwmDuty(uint8_t percent);
 
 private:
     void updateFaults(uint32_t now_ms);
@@ -132,14 +141,18 @@ private:
 
     float convertAdcToCurrent(float adc_voltage_V);
 
+    void lockFleet_() const;
+    void unlockFleet_() const;
+
     void setContactorGpioState(bool closed);
     void setSecondContactorGpioState(bool closed);
-    void setFanPwmDuty(uint8_t percent);
+
 
     bool canCloseContactors() const;
     void emergencyShutdown();
 
     BmsFleet* fleet_;
+    osMutexId_t fleet_access_mutex_{nullptr};
     ADS1115* battery_current_adc_;
     INA226* aux_current_monitor_;
 
@@ -163,7 +176,8 @@ private:
     float battery_current_A_;
     float aux_current_A_;
     float pack_voltage_V_;
-    uint32_t last_current_update_ms_;
+    uint32_t last_battery_current_update_ms_;
+    uint32_t last_aux_current_update_ms_;
 
     bool contactors_closed_;
     bool contactor_close_request_;

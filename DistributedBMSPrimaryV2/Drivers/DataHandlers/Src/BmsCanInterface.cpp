@@ -1,20 +1,22 @@
 #include "BmsCanInterface.hpp"
-#include "CanBus.hpp"
+
+#include "FleetSummary.hpp"
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 
 namespace {
 
-BmsCanProtocol::BmsCanFrame frameFromCanBus(const CanBus::Frame& f) {
-    BmsCanProtocol::BmsCanFrame wire{};
+CanFdFrame frameFromCanBus(const CanBus::Frame& f) {
+    CanFdFrame wire{};
     wire.extended = f.extended;
     wire.id = f.extended ? (f.id & 0x1FFFFFFFu) : (f.id & 0x7FFu);
-    const uint8_t n = static_cast<uint8_t>(std::min<uint8_t>(f.len, 8));
+    wire.rtr = f.rtr;
+    wire.fd_frame = f.fd;
+    const uint8_t n = static_cast<uint8_t>(std::min<uint8_t>(static_cast<uint8_t>(f.len), 8));
     wire.dlc = n;
-    if (n > 0) {
-        std::memcpy(wire.data.data(), f.data.data(), n);
+    for (uint8_t i = 0; i < n; ++i) {
+        wire.data[i] = f.data[i];
     }
     return wire;
 }
@@ -33,10 +35,6 @@ void BmsCanInterface::init(const Config& config) {
     last_battery_voltage_ms_ = 0;
     last_battery_temperature_ms_ = 0;
     last_battery_current_ms_ = 0;
-    last_heartbeat_ms_ = 0;
-    last_pack_status_ms_ = 0;
-    last_temperature_ms_ = 0;
-    last_cell_voltages_ms_ = 0;
     last_tx_ms_ = 0;
     last_faults_ = bms_manager_.getActiveFaults();
     last_state_ = bms_manager_.getState();
@@ -49,7 +47,7 @@ void BmsCanInterface::update(uint32_t now_ms) {
     updateEventDrivenTransmission(now_ms);
 }
 
-void BmsCanInterface::sendWire(const BmsCanProtocol::BmsCanFrame& fr) {
+void BmsCanInterface::sendWire(const CanFdFrame& fr) {
     const uint16_t sid = static_cast<uint16_t>(fr.id & 0x7FFu);
     const CanBus::Result r = can_bus_.sendStd(sid, fr.data.data(), fr.dlc, false);
     if (r == CanBus::Result::Ok) {
@@ -65,8 +63,7 @@ bool BmsCanInterface::canTransmit(uint32_t now_ms) {
 }
 
 void BmsCanInterface::sendBmsStatus() {
-    const BmsCanProtocol::BmsStatusMsg msg = createBmsStatusMsg(HAL_GetTick());
-    sendWire(BmsCanProtocol::MessageEncoder::encodeBmsStatus(msg));
+    sendWire(BmsCanProtocol::MessageEncoder::encodeBmsStatus(createBmsStatusMsg(HAL_GetTick())));
 }
 
 void BmsCanInterface::sendBatteryVoltage() {
@@ -117,6 +114,7 @@ const BmsCanInterface::Config& BmsCanInterface::getConfig() const {
 }
 
 void BmsCanInterface::updatePeriodicTransmission(uint32_t now_ms) {
+    // Vehicle spec IDs 0x040–0x043 only (same periodic set as DistributedBMSPrimary).
     if ((now_ms - last_bms_status_ms_) >= config_.bms_status_period_ms) {
         sendBmsStatus();
         last_bms_status_ms_ = now_ms;
@@ -132,22 +130,6 @@ void BmsCanInterface::updatePeriodicTransmission(uint32_t now_ms) {
     if ((now_ms - last_battery_current_ms_) >= config_.battery_current_period_ms) {
         sendBatteryCurrent();
         last_battery_current_ms_ = now_ms;
-    }
-    if ((now_ms - last_heartbeat_ms_) >= config_.heartbeat_period_ms) {
-        sendHeartbeat();
-        last_heartbeat_ms_ = now_ms;
-    }
-    if ((now_ms - last_pack_status_ms_) >= config_.pack_status_period_ms) {
-        sendPackStatus();
-        last_pack_status_ms_ = now_ms;
-    }
-    if ((now_ms - last_temperature_ms_) >= config_.temperature_period_ms) {
-        sendTemperature();
-        last_temperature_ms_ = now_ms;
-    }
-    if ((now_ms - last_cell_voltages_ms_) >= config_.cell_voltages_period_ms) {
-        sendCellVoltages();
-        last_cell_voltages_ms_ = now_ms;
     }
 }
 
@@ -194,7 +176,7 @@ void BmsCanInterface::processReceivedMessages(uint32_t now_ms) {
             continue;
         }
 
-        const BmsCanProtocol::BmsCanFrame wire = frameFromCanBus(f);
+        const CanFdFrame wire = frameFromCanBus(f);
         rx_debug_.last_id = wire.id;
         rx_debug_.last_dlc = wire.dlc;
         for (uint8_t i = 0; i < wire.dlc && i < 8; ++i) {
@@ -219,20 +201,20 @@ void BmsCanInterface::processReceivedMessages(uint32_t now_ms) {
 
 void BmsCanInterface::handleCommand(const BmsCanProtocol::CommandMsg& cmd) {
     switch (cmd.command_type) {
-        case BmsCanProtocol::CMD_CLOSE_CONTACTORS:
-            bms_manager_.requestContactorsClose();
-            break;
-        case BmsCanProtocol::CMD_OPEN_CONTACTORS:
-            bms_manager_.requestContactorsOpen();
-            break;
-        case BmsCanProtocol::CMD_CLEAR_FAULTS:
-            bms_manager_.clearFaults();
-            break;
-        case BmsCanProtocol::CMD_EMERGENCY_SHUTDOWN:
-            bms_manager_.requestShutdown();
-            break;
-        default:
-            break;
+    case BmsCanProtocol::CMD_CLOSE_CONTACTORS:
+        bms_manager_.requestContactorsClose();
+        break;
+    case BmsCanProtocol::CMD_OPEN_CONTACTORS:
+        bms_manager_.requestContactorsOpen();
+        break;
+    case BmsCanProtocol::CMD_CLEAR_FAULTS:
+        bms_manager_.clearFaults();
+        break;
+    case BmsCanProtocol::CMD_EMERGENCY_SHUTDOWN:
+        bms_manager_.requestShutdown();
+        break;
+    default:
+        break;
     }
 }
 
@@ -245,7 +227,6 @@ void BmsCanInterface::handleConfigRequest(const BmsCanProtocol::ConfigRequestMsg
     resp.cell_undervoltage_mV = c.cell_undervoltage_mV;
     resp.cell_imbalance_mV = c.cell_imbalance_mV;
     resp.reserved2 = 0;
-    (void)resp;
     if (req.request_type == BmsCanProtocol::CFG_REQ_NONE) {
         return;
     }
@@ -272,7 +253,7 @@ BmsCanProtocol::BatteryVoltageMsg BmsCanInterface::createBatteryVoltageMsg() {
         pack_voltage_V = 0.0f;
     }
     msg.total_voltage_x100 = static_cast<uint16_t>(pack_voltage_V * 100.0f);
-    const auto& summary = bms_manager_.getFleetSummary();
+    const FleetSummaryData summary = bms_manager_.getFleetSummary();
     msg.highest_cell_mV = summary.highest_cell_mV;
     msg.lowest_cell_mV = summary.lowest_cell_mV;
     msg.highest_cell_idx = summary.highest_cell_idx;
@@ -282,7 +263,7 @@ BmsCanProtocol::BatteryVoltageMsg BmsCanInterface::createBatteryVoltageMsg() {
 
 BmsCanProtocol::BatteryTemperatureMsg BmsCanInterface::createBatteryTemperatureMsg() {
     BmsCanProtocol::BatteryTemperatureMsg msg{};
-    const auto& summary = bms_manager_.getFleetSummary();
+    const FleetSummaryData summary = bms_manager_.getFleetSummary();
     msg.high_temp_C_x10 = static_cast<int16_t>(summary.highest_temp_C * 10.0f);
     msg.high_temp_idx = summary.highest_temp_idx;
     msg.avg_temp_C_x10 = msg.high_temp_C_x10;
@@ -321,24 +302,26 @@ BmsCanProtocol::PackStatusMsg BmsCanInterface::createPackStatusMsg() {
     msg.soc_percent_x10 = static_cast<uint16_t>(bms_manager_.getStateOfCharge() * 10.0f);
     msg.soh_percent_x10 = 1000;
     msg.contactor_state = bms_manager_.areContactorsClosed() ? 1 : 0;
+    msg.reserved = 0;
     return msg;
 }
 
 BmsCanProtocol::TemperatureMsg BmsCanInterface::createTemperatureMsg() {
     BmsCanProtocol::TemperatureMsg msg{};
-    const auto& summary = bms_manager_.getFleetSummary();
+    const FleetSummaryData summary = bms_manager_.getFleetSummary();
     msg.highest_temp_C_x10 = static_cast<int16_t>(summary.highest_temp_C * 10.0f);
     msg.lowest_temp_C_x10 = msg.highest_temp_C_x10;
     msg.avg_temp_C_x10 = msg.highest_temp_C_x10;
     msg.highest_temp_idx = summary.highest_temp_idx;
     msg.lowest_temp_idx = summary.highest_temp_idx;
-    msg.num_sensors = 1;
+    msg.num_sensors = 0;
+    msg.reserved = 0;
     return msg;
 }
 
 BmsCanProtocol::CellVoltagesMsg BmsCanInterface::createCellVoltagesMsg() {
     BmsCanProtocol::CellVoltagesMsg msg{};
-    const auto& summary = bms_manager_.getFleetSummary();
+    const FleetSummaryData summary = bms_manager_.getFleetSummary();
     msg.highest_cell_mV = summary.highest_cell_mV;
     msg.lowest_cell_mV = summary.lowest_cell_mV;
     msg.avg_cell_mV = static_cast<uint16_t>((summary.highest_cell_mV + summary.lowest_cell_mV) / 2);
@@ -346,6 +329,7 @@ BmsCanProtocol::CellVoltagesMsg BmsCanInterface::createCellVoltagesMsg() {
     msg.lowest_cell_idx = summary.lowest_cell_idx;
     const uint16_t imb = summary.highest_cell_mV - summary.lowest_cell_mV;
     msg.imbalance_mV = static_cast<uint8_t>(imb > 255u ? 255u : imb);
+    msg.reserved = 0;
     return msg;
 }
 
@@ -369,6 +353,8 @@ BmsCanProtocol::FaultStatusMsg BmsCanInterface::createFaultStatusMsg() {
     }
     const uint32_t now_ms = HAL_GetTick();
     msg.fault_timestamp_s = static_cast<uint16_t>((now_ms - system_start_ms_) / 1000u);
+    msg.reserved[0] = 0;
+    msg.reserved[1] = 0;
     return msg;
 }
 

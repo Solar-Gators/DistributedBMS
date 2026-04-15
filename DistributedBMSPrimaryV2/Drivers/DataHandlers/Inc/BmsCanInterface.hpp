@@ -2,51 +2,70 @@
 
 #include "BmsCanProtocol.hpp"
 #include "BmsManager.hpp"
+#include "CanBus.hpp"
+#include "CanFdFrame.hpp"
 
 #include <cstdint>
 
-class CanBus;
-
 /**
- * Vehicle CAN (FDCAN3): periodic telemetry + command RX (close/open contactors, etc.).
+ * BMS CAN Interface - Application Layer
+ *
+ * High-level interface for BMS CAN communication.
+ * Handles:
+ * - Periodic message transmission
+ * - Event-driven message transmission
+ * - Command reception and processing
+ * - Message rate limiting
+ * - Integration with BmsManager
  */
 class BmsCanInterface {
 public:
+    // Lightweight debug view of last received CAN frame.
+    // This is intended to be inspected from a debugger.
     struct RxDebug {
         uint32_t last_id = 0;
-        uint8_t last_dlc = 0;
-        uint8_t last_data[8]{};
-        uint32_t rx_count = 0;
+        uint8_t  last_dlc = 0;
+        uint8_t  last_data[8]{};
+        uint32_t rx_count = 0;   // Total frames seen since boot
     };
 
     struct Config {
-        uint32_t bms_status_period_ms = 50;
-        uint32_t battery_voltage_period_ms = 50;
-        uint32_t battery_temperature_period_ms = 50;
-        uint32_t battery_current_period_ms = 50;
+        // Transmission rates (ms)
+        uint32_t bms_status_period_ms = 50;       // BMS Status (0x040) every 50ms
+        uint32_t battery_voltage_period_ms = 50;     // Battery Voltage (0x041) every 50ms
+        uint32_t battery_temperature_period_ms = 50; // Battery Temperature (0x042) every 50ms
+        uint32_t battery_current_period_ms = 50;     // Battery Current (0x043) every 50ms
+        // Not used by updatePeriodicTransmission (only 0x040–0x043); kept for API / manual send.
         uint32_t heartbeat_period_ms = 100;
         uint32_t pack_status_period_ms = 50;
         uint32_t temperature_period_ms = 100;
         uint32_t cell_voltages_period_ms = 100;
 
+        // Event-driven message settings
         bool enable_fault_messages = true;
-        bool enable_warning_messages = false;
+        bool enable_warning_messages = true;
         bool enable_state_change_messages = true;
 
+        // Node identification
         uint8_t node_id = 0x01;
 
-        uint32_t min_message_interval_ms = 10;
+        // Rate limiting
+        uint32_t min_message_interval_ms = 10;    // Minimum time between messages
     };
 
     BmsCanInterface(CanBus& can_bus, BmsManager& bms_manager);
 
+    // Initialization
     void init(const Config& config);
+
+    // Main update function - call regularly from main loop
     void update(uint32_t now_ms);
 
-    void sendBmsStatus();
-    void sendBatteryVoltage();
-    void sendBatteryTemperature();
-    void sendBatteryCurrent();
+    // Force transmission (for testing/debugging)
+    void sendBmsStatus();   // BMS Status 0x040 - faults, contactors, daughter boards
+    void sendBatteryVoltage();    // Battery Voltage 0x041 - pack + high/low cell
+    void sendBatteryTemperature(); // Battery Temperature 0x042 - high/avg temp
+    void sendBatteryCurrent();     // Battery Current 0x043 - current as float
     void sendHeartbeat();
     void sendPackStatus();
     void sendTemperature();
@@ -54,27 +73,33 @@ public:
     void sendFaultStatus();
     void sendStateChange(BmsManager::BmsState old_state, BmsManager::BmsState new_state);
 
+    // Configuration
     void setConfig(const Config& config);
     const Config& getConfig() const;
 
+    // Statistics
     uint32_t txOkCount() const { return tx_ok_count_; }
     uint32_t txErrorCount() const { return tx_error_count_; }
     uint32_t rxCommandCount() const { return rx_command_count_; }
     const RxDebug& rxDebug() const { return rx_debug_; }
 
 private:
+    // Periodic transmission handlers
     void updatePeriodicTransmission(uint32_t now_ms);
+
+    // Event-driven transmission handlers
     void updateEventDrivenTransmission(uint32_t now_ms);
     void checkAndSendFaults(uint32_t now_ms);
     void checkAndSendStateChange(uint32_t now_ms);
 
+    // Command processing
     void processReceivedMessages(uint32_t now_ms);
     void handleCommand(const BmsCanProtocol::CommandMsg& cmd);
     void handleConfigRequest(const BmsCanProtocol::ConfigRequestMsg& req);
 
-    void sendWire(const BmsCanProtocol::BmsCanFrame& fr);
-    bool canTransmit(uint32_t now_ms);
+    void sendWire(const CanFdFrame& fr);
 
+    // Message creation helpers
     BmsCanProtocol::BmsStatusMsg createBmsStatusMsg(uint32_t now_ms);
     BmsCanProtocol::BatteryVoltageMsg createBatteryVoltageMsg();
     BmsCanProtocol::BatteryTemperatureMsg createBatteryTemperatureMsg();
@@ -84,34 +109,40 @@ private:
     BmsCanProtocol::TemperatureMsg createTemperatureMsg();
     BmsCanProtocol::CellVoltagesMsg createCellVoltagesMsg();
     BmsCanProtocol::FaultStatusMsg createFaultStatusMsg();
-    BmsCanProtocol::StateChangeMsg createStateChangeMsg(BmsManager::BmsState old_state,
-                                                          BmsManager::BmsState new_state,
-                                                          uint32_t duration_ms);
+    BmsCanProtocol::StateChangeMsg createStateChangeMsg(
+        BmsManager::BmsState old_state,
+        BmsManager::BmsState new_state,
+        uint32_t duration_ms);
 
+    // Rate limiting
+    bool canTransmit(uint32_t now_ms);
+
+    // Member variables
     CanBus& can_bus_;
     BmsManager& bms_manager_;
     Config config_;
 
+    // Debug snapshot of received frames (for use with debugger)
     RxDebug rx_debug_{};
 
+    // Timing
     uint32_t last_bms_status_ms_ = 0;
     uint32_t last_battery_voltage_ms_ = 0;
     uint32_t last_battery_temperature_ms_ = 0;
     uint32_t last_battery_current_ms_ = 0;
-    uint32_t last_heartbeat_ms_ = 0;
-    uint32_t last_pack_status_ms_ = 0;
-    uint32_t last_temperature_ms_ = 0;
-    uint32_t last_cell_voltages_ms_ = 0;
     uint32_t last_tx_ms_ = 0;
 
+    // State tracking for event-driven messages
     uint16_t last_faults_ = 0;
     BmsManager::BmsState last_state_ = BmsManager::BmsState::INIT;
     uint32_t state_entry_time_ms_ = 0;
 
+    // Statistics
     uint32_t tx_ok_count_ = 0;
     uint32_t tx_error_count_ = 0;
     uint32_t rx_command_count_ = 0;
 
+    // System uptime
     uint32_t system_start_ms_ = 0;
     uint16_t sequence_counter_ = 0;
 };

@@ -10,6 +10,7 @@
 #include "ads1115.hpp"
 #include "ina226.hpp"
 
+#include "cmsis_os.h"
 #include "stm32g4xx_hal_tim.h"
 
 #include <cstdint>
@@ -39,7 +40,8 @@ BmsManager::BmsManager(BmsFleet* fleet,
     , battery_current_A_(0.0f)
     , aux_current_A_(0.0f)
     , pack_voltage_V_(0.0f)
-    , last_current_update_ms_(0)
+    , last_battery_current_update_ms_(0)
+    , last_aux_current_update_ms_(0)
     , contactors_closed_(false)
     , contactor_close_request_(false)
     , contactor_open_request_(false)
@@ -51,6 +53,25 @@ BmsManager::BmsManager(BmsFleet* fleet,
     // Config already initialized with defaults in struct
 }
 
+void BmsManager::setFleetAccessMutex(osMutexId_t mutex_id)
+{
+    fleet_access_mutex_ = mutex_id;
+}
+
+void BmsManager::lockFleet_() const
+{
+    if (fleet_access_mutex_ != nullptr) {
+        (void)osMutexAcquire(fleet_access_mutex_, osWaitForever);
+    }
+}
+
+void BmsManager::unlockFleet_() const
+{
+    if (fleet_access_mutex_ != nullptr) {
+        (void)osMutexRelease(fleet_access_mutex_);
+    }
+}
+
 // ========== Initialization ==========
 void BmsManager::init()
 {
@@ -60,17 +81,12 @@ void BmsManager::init()
     contactors_closed_ = false;
     fan_speed_percent_ = 0;
 
-    // Initialize PWM if configured
-    // if (fan_pwm_tim_ != nullptr) {
-    //     HAL_TIM_PWM_Start(fan_pwm_tim_, fan_pwm_channel_);
-    //     fan_pwm_initialized_ = true;
-    //     setFanPwmDuty(0);  // Start with fans off
-    // }
+
 
     if (fan_pwm_tim_ != nullptr) {
         HAL_TIM_PWM_Start(fan_pwm_tim_, fan_pwm_channel_);
         fan_pwm_initialized_ = true;
-        setFanPwmDuty(0);
+        setFanPwmDuty(50);
     }
 }
 
@@ -88,13 +104,20 @@ void BmsManager::update(uint32_t now_ms)
 
     // Update hardware outputs
     updateContactors(now_ms);
-    updateFans(now_ms);
+    //updateFans(now_ms);
 }
 
 // ========== Data Access ==========
-const FleetSummaryData& BmsManager::getFleetSummary() const
+FleetSummaryData BmsManager::getFleetSummary() const
 {
-    return fleet_->summary();
+    FleetSummaryData copy{};
+    if (fleet_ == nullptr) {
+        return copy;
+    }
+    lockFleet_();
+    copy = fleet_->summary();
+    unlockFleet_();
+    return copy;
 }
 
 float BmsManager::getBatteryCurrent_A() const
@@ -114,7 +137,13 @@ float BmsManager::getPackVoltage_V() const
 
 bool BmsManager::hasValidData(uint32_t now_ms) const
 {
-    return fleet_->has_data(now_ms);
+    if (fleet_ == nullptr) {
+        return false;
+    }
+    lockFleet_();
+    const bool ok = fleet_->has_data(now_ms);
+    unlockFleet_();
+    return ok;
 }
 
 // ========== Fault Management ==========
@@ -235,7 +264,10 @@ uint8_t BmsManager::getFanSpeed() const
 uint8_t BmsManager::getDaughterBoardStatusBitmap(uint32_t now_ms) const
 {
     uint8_t bitmap = 0;
-    if (!fleet_) return 0;
+    if (!fleet_) {
+        return 0;
+    }
+    lockFleet_();
     const uint32_t stale_ms = config_.data_stale_timeout_ms;
     for (uint8_t i = 0; i < PrimaryBmsFleetCfg::MAX_MODULES; i++) {
         const auto& m = fleet_->moduleSnapshot(i);
@@ -243,6 +275,7 @@ uint8_t BmsManager::getDaughterBoardStatusBitmap(uint32_t now_ms) const
             bitmap |= (1u << i);
         }
     }
+    unlockFleet_();
     return bitmap;
 }
 
@@ -292,26 +325,32 @@ const BmsManager::Config& BmsManager::getConfig() const
 // ========== Private: Update Methods ==========
 void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
 {
-    // Update battery current from ADS1115
-    if (battery_current_adc_ != nullptr) {
+    // Rate-limit sensor reads to keep loop cadence deterministic.
+    if (battery_current_adc_ != nullptr &&
+        (now_ms - last_battery_current_update_ms_) >= config_.ads1115_read_period_ms) {
         float adc_voltage_V;
         if (battery_current_adc_->readSingleEnded(config_.current_adc_channel, adc_voltage_V) == HAL_OK) {
             battery_current_A_ = convertAdcToCurrent(adc_voltage_V);
-            last_current_update_ms_ = now_ms;
         }
+        last_battery_current_update_ms_ = now_ms;
     }
 
-    // Update auxiliary current from INA226
-    if (aux_current_monitor_ != nullptr) {
+    if (aux_current_monitor_ != nullptr &&
+        (now_ms - last_aux_current_update_ms_) >= config_.ina226_read_period_ms) {
         INA226::Measurement m;
         if (aux_current_monitor_->readMeasurement(m) == HAL_OK) {
             aux_current_A_ = m.current_A;
         }
+        last_aux_current_update_ms_ = now_ms;
     }
 
     // Update pack voltage from fleet data
-    const auto& summary = fleet_->summary();
-    pack_voltage_V_ = summary.total_voltage_mV / 1000.0f;
+    if (fleet_ != nullptr) {
+        lockFleet_();
+        const auto& summary = fleet_->summary();
+        pack_voltage_V_ = summary.total_voltage_mV / 1000.0f;
+        unlockFleet_();
+    }
 }
 
 void BmsManager::updateFaults(uint32_t now_ms)
@@ -324,6 +363,7 @@ void BmsManager::updateFaults(uint32_t now_ms)
 
     uint16_t new_faults = 0;
 
+    lockFleet_();
     const bool fleet_ok = (fleet_ != nullptr) && fleet_->has_data(now_ms);
 
     // Voltage / thermal / imbalance faults require fresh daughter telemetry
@@ -351,6 +391,7 @@ void BmsManager::updateFaults(uint32_t now_ms)
     if (checkDataStale(now_ms)) {
         new_faults |= static_cast<uint16_t>(FaultType::FLEET_DATA_STALE);
     }
+    unlockFleet_();
 
     // Update active faults
     active_faults_ = new_faults;
@@ -689,6 +730,9 @@ bool BmsManager::checkAuxOvercurrent()
 
 bool BmsManager::checkDataStale(uint32_t now_ms)
 {
+    if (fleet_ == nullptr) {
+        return true;
+    }
     return !fleet_->has_data(now_ms);
 }
 
@@ -781,14 +825,17 @@ bool BmsManager::canCloseContactors() const
         return false;  // No faults allowed
     }
 
-    // Check if we have valid data
-    uint32_t now_ms = HAL_GetTick();
-    if (!fleet_->has_data(now_ms)) {
-        return false;  // Need valid data
+    if (fleet_ == nullptr) {
+        return false;
     }
 
-    // Additional safety checks can be added here
-    // e.g., voltage in safe range, temperature OK, etc.
+    uint32_t now_ms = HAL_GetTick();
+    lockFleet_();
+    const bool ok = fleet_->has_data(now_ms);
+    unlockFleet_();
+    if (!ok) {
+        return false;
+    }
 
     return true;
 }

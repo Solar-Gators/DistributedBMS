@@ -7,9 +7,10 @@
 #include "CanBus.hpp"
 #include "CanFrames.hpp"
 #include "FleetSummary.hpp"
+#include "PrimaryV2Contract.hpp"
 
 constexpr uint8_t MAX_MODULES = 8;
-constexpr uint32_t STALE_MS = 1500;
+constexpr uint32_t STALE_MS = PrimaryV2Contract::DAUGHTER_STALE_TIMEOUT_MS;
 
 enum UartMessageType : uint8_t {
     UART_FLEET_SUMMARY = 16,
@@ -79,6 +80,8 @@ public:
 
 private:
     void refreshSummaryCache(uint32_t now_ms);
+    /** Map RX frame to modules_[] index using registerDaughter(); -1 if unknown. Classic CAN only. */
+    int daughterSlotForCanId_(const CanBus::Frame& msg) const;
 
     std::array<ModuleData, MAX_MODULES> modules_{};
     std::array<IdMapElement, MAX_MODULES> idmap_{};

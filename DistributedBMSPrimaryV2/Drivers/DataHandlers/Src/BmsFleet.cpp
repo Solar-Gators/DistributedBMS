@@ -17,6 +17,11 @@ void ModuleData::clear() {
     lowVoltageID = 0;
     highVoltageID = 0;
     avgVoltage = 0.0f;
+
+    num_cells = 0;
+    faults = 0;
+    last_ms = 0;
+    online = false;
 }
 
 BmsFleet::BmsFleet() {
@@ -56,23 +61,46 @@ ModuleData& BmsFleet::module(uint8_t id) {
     return modules_[id];
 }
 
+int BmsFleet::daughterSlotForCanId_(const CanBus::Frame& msg) const {
+    if (msg.extended) {
+        return -1;
+    }
+    const uint16_t sid = static_cast<uint16_t>(msg.id & 0x7FFu);
+
+    bool any_registered = false;
+    for (const auto& e : idmap_) {
+        if (!e.used) {
+            continue;
+        }
+        any_registered = true;
+        if (e.can_id == sid && e.index < MAX_MODULES) {
+            return static_cast<int>(e.index);
+        }
+    }
+
+    if (!any_registered) {
+        const int legacy = static_cast<int>(sid) - 0x100;
+        if (legacy >= 0 && legacy < static_cast<int>(MAX_MODULES)) {
+            return legacy;
+        }
+    }
+    return -1;
+}
+
 void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
     if (msg.rtr || msg.len == 0) {
         return;
     }
 
-    const int module_index = static_cast<int>(msg.id) - 0x100;
-    if (module_index < 0 || module_index >= static_cast<int>(MAX_MODULES)) {
+    const int slot = daughterSlotForCanId_(msg);
+    if (slot < 0 || slot >= static_cast<int>(MAX_MODULES)) {
         return;
     }
 
-    ModuleData& M = modules_[static_cast<size_t>(module_index)];
-
-    M.last_ms = now_ms;
-    M.online = true;
-
+    ModuleData& M = modules_[static_cast<size_t>(slot)];
     const uint8_t* data = msg.data.data();
 
+    bool decoded = false;
     switch (CanFrames::getType(data)) {
     case CanFrames::AVERAGES: {
         float avg_temp = 0.0f;
@@ -82,6 +110,7 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
             M.avgTemp = avg_temp;
             M.avgVoltage = static_cast<float>(avg_voltage);
             M.num_cells = num_cells;
+            decoded = true;
         }
         break;
     }
@@ -98,6 +127,7 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
             M.lowVoltageID = low_index;
             M.highVoltageID = high_index;
             M.faults = faults;
+            decoded = true;
         }
         break;
     }
@@ -107,11 +137,20 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
         if (CanFrames::decodeHighTemp(data, high_temp, high_index)) {
             M.highTemp = high_temp;
             M.highTempID = high_index;
+            decoded = true;
         }
         break;
     }
+    case 3:{
+    	break;
+    }
     default:
         break;
+    }
+
+    if (decoded) {
+        M.last_ms = now_ms;
+        M.online = true;
     }
 }
 
@@ -185,7 +224,14 @@ void BmsFleet::refreshSummaryCache(uint32_t now_ms) {
     summary_cache_.highest_cell_idx = f.highVoltageID;
     summary_cache_.lowest_cell_idx = f.lowVoltageID;
     summary_cache_.highest_temp_idx = f.highTempID;
-    summary_cache_.last_update_ms = now_ms;
+    /* Fleet freshness = latest daughter RX among modules still marked online (not aggregation time). */
+    uint32_t newest_rx_ms = 0;
+    for (const auto& m : modules_) {
+        if (m.online && m.last_ms > newest_rx_ms) {
+            newest_rx_ms = m.last_ms;
+        }
+    }
+    summary_cache_.last_update_ms = newest_rx_ms;
 
     for (size_t i = 0; i < modules_.size(); ++i) {
         const auto& src = modules_[i];

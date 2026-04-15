@@ -7,6 +7,14 @@
 # define CELLS 6
 # define ADC_CHANNEL_COUNT 7
 
+/**
+ * Set to 1 for bench / bring-up: fixed cell mV and NTC ADC counts (no VCOUT, no temp ADC).
+ * Set to 0 for production: real AFE cell read + DMA NTC channels.
+ */
+#ifndef USE_STANDIN_SENSORS
+#define USE_STANDIN_SENSORS 1
+#endif
+
 #include "User.hpp"
 
 //Lower Level Drivers
@@ -57,10 +65,24 @@ static std::array<uint16_t, CELLS> cellVoltages{};
 //Temp Data
 static std::array<uint16_t, CELLS> cellTempADC{};
 
+#if USE_STANDIN_SENSORS
+/** Fixed per-cell voltages (mV) for primary fleet aggregation / CAN bring-up. */
+static constexpr std::array<uint16_t, CELLS> kStandinCell_mV = {{
+    3700u, 3710u, 3690u, 3720u, 3705u, 3695u,
+}};
+/**
+ * 12-bit ADC counts into BMS::ntc_to_C() (divider: NTC top, 10k to GND).
+ * ~2048 ≈ room temperature; small spread so high/avg differ slightly.
+ */
+static constexpr std::array<uint16_t, CELLS> kStandinNtcCounts = {{
+    2048u, 2055u, 2040u, 2060u, 2035u, 2050u,
+}};
+#endif
+
 bool debugMode;
 
-#if 0
-// Real VCOUT + ADC — change to `#if 1` when voltage measurement is ready.
+#if !USE_STANDIN_SENSORS
+// Real VCOUT + ADC (used when USE_STANDIN_SENSORS is 0).
 static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
 {
     // Use MCU ADC reference (e.g. 3.3 V), not AFE VREF (3.0 V). AFE gain 0.6 from REF_SEL=1.
@@ -113,7 +135,7 @@ static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
 
     return HAL_OK;
 }
-#endif
+#endif /* !USE_STANDIN_SENSORS */
 
 static void CanErrorCallback(CanBus& can, uint32_t err)
 {
@@ -173,18 +195,13 @@ void StartDefaultTask(void *argument)
 
 		osMutexAcquire(bmsMutex_id, osWaitForever);
 
-		// Synthetic cell voltages (mV) for bring-up until VCOUT+ADC is restored.
-		// Enable `readCellsFromAFE` (`#if 1` at its `#if 0`) and use the `#if 0` production block below instead of this.
-		{
-			static constexpr std::array<uint16_t, CELLS> kTestCell_mV = {{
-				3700u, 3710u, 3690u, 3720u, 3705u, 3695u,
-			}};
-			cellVoltages = kTestCell_mV;
-			bms.set_cell_mV(cellVoltages);
-		}
-
-#if 0
-		// Production path: readCellsFromAFE + DataValidator (enable readCellsFromAFE first).
+#if USE_STANDIN_SENSORS
+		cellVoltages = kStandinCell_mV;
+		bms.set_cell_mV(cellVoltages);
+		cellTempADC = kStandinNtcCounts;
+		bms.set_ntc_counts(cellTempADC);
+#else
+		// Production path: VCOUT + ADC + DataValidator.
 		if (readCellsFromAFE(cellVoltages) != HAL_OK)
 		{
 			faultManager.setFault(FaultManager::FaultType::BQ76920_COMM_ERROR);
@@ -205,7 +222,10 @@ void StartDefaultTask(void *argument)
 #endif
 		osMutexRelease(bmsMutex_id);
 
-		//read tempatures
+#if USE_STANDIN_SENSORS
+		faultManager.clearFault(FaultManager::FaultType::ADC_RESULT_ERROR);
+#else
+		// Read temperatures from ADC DMA
 		TempDMAComplete = false;
 		HAL_ADC_Start_DMA(&hadc1, (uint32_t* )adc_buf, ADC_CHANNEL_COUNT);
 		while (!TempDMAComplete) {}
@@ -216,11 +236,14 @@ void StartDefaultTask(void *argument)
         cellTempADC[5] = adc_buf[6];
 
 		if(dataValidator.validateADCReadings(cellTempADC) == 0){
+			osMutexAcquire(bmsMutex_id, osWaitForever);
 			bms.set_ntc_counts(cellTempADC);
+			osMutexRelease(bmsMutex_id);
 			faultManager.clearFault(FaultManager::FaultType::ADC_RESULT_ERROR);
 		}else{
 			faultManager.setFault(FaultManager::FaultType::ADC_RESULT_ERROR);
 		}
+#endif
 
 		bms.setFaults(faultManager.getFaultMask());
 

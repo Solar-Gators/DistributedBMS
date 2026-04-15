@@ -1,23 +1,16 @@
 #include "BmsCanProtocol.hpp"
 
+#include <cstdint>
 #include <cstring>
 
 namespace BmsCanProtocol {
 
-namespace {
-
-BmsCanFrame makeStd(uint16_t id) {
-    BmsCanFrame frame{};
+CanFdFrame MessageEncoder::encodeBmsStatus(const BmsStatusMsg& msg) {
+    CanFdFrame frame{};
     frame.extended = false;
-    frame.id = id;
+    frame.id = BMS_STATUS;
+    frame.fd_frame = false;
     frame.dlc = 8;
-    return frame;
-}
-
-}  // namespace
-
-BmsCanFrame MessageEncoder::encodeBmsStatus(const BmsStatusMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_STATUS);
     frame.data[0] = static_cast<uint8_t>((msg.bms_faults >> 8) & 0xFF);
     frame.data[1] = static_cast<uint8_t>(msg.bms_faults & 0xFF);
     frame.data[2] = msg.contactors_state;
@@ -29,8 +22,12 @@ BmsCanFrame MessageEncoder::encodeBmsStatus(const BmsStatusMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeBatteryVoltage(const BatteryVoltageMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_BATTERY_VOLTAGE);
+CanFdFrame MessageEncoder::encodeBatteryVoltage(const BatteryVoltageMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_BATTERY_VOLTAGE;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     frame.data[0] = static_cast<uint8_t>((msg.total_voltage_x100 >> 8) & 0xFF);
     frame.data[1] = static_cast<uint8_t>(msg.total_voltage_x100 & 0xFF);
     frame.data[2] = static_cast<uint8_t>((msg.highest_cell_mV >> 8) & 0xFF);
@@ -42,8 +39,12 @@ BmsCanFrame MessageEncoder::encodeBatteryVoltage(const BatteryVoltageMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeBatteryTemperature(const BatteryTemperatureMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_BATTERY_TEMPERATURE);
+CanFdFrame MessageEncoder::encodeBatteryTemperature(const BatteryTemperatureMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_BATTERY_TEMPERATURE;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     frame.data[0] = static_cast<uint8_t>((msg.high_temp_C_x10 >> 8) & 0xFF);
     frame.data[1] = static_cast<uint8_t>(msg.high_temp_C_x10 & 0xFF);
     frame.data[2] = msg.high_temp_idx;
@@ -55,8 +56,12 @@ BmsCanFrame MessageEncoder::encodeBatteryTemperature(const BatteryTemperatureMsg
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeBatteryCurrent(const BatteryCurrentMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_BATTERY_CURRENT);
+CanFdFrame MessageEncoder::encodeBatteryCurrent(const BatteryCurrentMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_BATTERY_CURRENT;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     uint32_t bits;
     std::memcpy(&bits, &msg.current_A, sizeof(float));
     frame.data[0] = static_cast<uint8_t>((bits >> 24) & 0xFF);
@@ -70,8 +75,12 @@ BmsCanFrame MessageEncoder::encodeBatteryCurrent(const BatteryCurrentMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeHeartbeat(const HeartbeatMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_HEARTBEAT);
+CanFdFrame MessageEncoder::encodeHeartbeat(const HeartbeatMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_HEARTBEAT;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     frame.data[0] = msg.node_id;
     frame.data[1] = msg.state;
     frame.data[2] = msg.fault_count;
@@ -81,8 +90,12 @@ BmsCanFrame MessageEncoder::encodeHeartbeat(const HeartbeatMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodePackStatus(const PackStatusMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_PACK_STATUS);
+CanFdFrame MessageEncoder::encodePackStatus(const PackStatusMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_PACK_STATUS;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     packUint16(&frame.data[0], msg.pack_voltage_mV);
     packInt16(&frame.data[2], msg.pack_current_mA);
     packUint16(&frame.data[4], msg.soc_percent_x10);
@@ -90,8 +103,12 @@ BmsCanFrame MessageEncoder::encodePackStatus(const PackStatusMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeTemperature(const TemperatureMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_TEMPERATURE);
+CanFdFrame MessageEncoder::encodeTemperature(const TemperatureMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_TEMPERATURE;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     packInt16(&frame.data[0], msg.highest_temp_C_x10);
     packInt16(&frame.data[2], msg.lowest_temp_C_x10);
     packInt16(&frame.data[4], msg.avg_temp_C_x10);
@@ -100,8 +117,12 @@ BmsCanFrame MessageEncoder::encodeTemperature(const TemperatureMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeCellVoltages(const CellVoltagesMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_CELL_VOLTAGES);
+CanFdFrame MessageEncoder::encodeCellVoltages(const CellVoltagesMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_CELL_VOLTAGES;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     packUint16(&frame.data[0], msg.highest_cell_mV);
     packUint16(&frame.data[2], msg.lowest_cell_mV);
     packUint16(&frame.data[4], msg.avg_cell_mV);
@@ -110,8 +131,12 @@ BmsCanFrame MessageEncoder::encodeCellVoltages(const CellVoltagesMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeFaultStatus(const FaultStatusMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_FAULT_STATUS);
+CanFdFrame MessageEncoder::encodeFaultStatus(const FaultStatusMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_FAULT_STATUS;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     packUint16(&frame.data[0], msg.active_faults);
     packUint16(&frame.data[2], msg.fault_count);
     frame.data[4] = msg.critical_fault;
@@ -120,8 +145,12 @@ BmsCanFrame MessageEncoder::encodeFaultStatus(const FaultStatusMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeWarningStatus(const WarningStatusMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_WARNING_STATUS);
+CanFdFrame MessageEncoder::encodeWarningStatus(const WarningStatusMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_WARNING_STATUS;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     packUint16(&frame.data[0], msg.active_warnings);
     frame.data[2] = msg.warning_count;
     frame.data[3] = msg.reserved;
@@ -129,8 +158,12 @@ BmsCanFrame MessageEncoder::encodeWarningStatus(const WarningStatusMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeStateChange(const StateChangeMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_STATE_CHANGE);
+CanFdFrame MessageEncoder::encodeStateChange(const StateChangeMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_STATE_CHANGE;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     frame.data[0] = msg.old_state;
     frame.data[1] = msg.new_state;
     packUint16(&frame.data[2], msg.state_duration_ms);
@@ -138,8 +171,12 @@ BmsCanFrame MessageEncoder::encodeStateChange(const StateChangeMsg& msg) {
     return frame;
 }
 
-BmsCanFrame MessageEncoder::encodeConfigResponse(const ConfigResponseMsg& msg) {
-    BmsCanFrame frame = makeStd(BMS_CONFIG_RESPONSE);
+CanFdFrame MessageEncoder::encodeConfigResponse(const ConfigResponseMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = BMS_CONFIG_RESPONSE;
+    frame.fd_frame = false;
+    frame.dlc = 8;
     frame.data[0] = msg.response_type;
     frame.data[1] = msg.reserved;
     packUint16(&frame.data[2], msg.cell_overvoltage_mV);
@@ -164,7 +201,7 @@ void MessageEncoder::packUint32(uint8_t* buf, uint32_t value) {
     buf[3] = static_cast<uint8_t>((value >> 24) & 0xFF);
 }
 
-bool MessageDecoder::decodeCommand(const BmsCanFrame& frame, CommandMsg& msg) {
+bool MessageDecoder::decodeCommand(const CanFdFrame& frame, CommandMsg& msg) {
     if (frame.id != BMS_COMMAND || frame.dlc < 1) {
         return false;
     }
@@ -173,7 +210,7 @@ bool MessageDecoder::decodeCommand(const BmsCanFrame& frame, CommandMsg& msg) {
     return true;
 }
 
-bool MessageDecoder::decodeConfigRequest(const BmsCanFrame& frame, ConfigRequestMsg& msg) {
+bool MessageDecoder::decodeConfigRequest(const CanFdFrame& frame, ConfigRequestMsg& msg) {
     if (frame.id != BMS_CONFIG_REQUEST || frame.dlc < 1) {
         return false;
     }

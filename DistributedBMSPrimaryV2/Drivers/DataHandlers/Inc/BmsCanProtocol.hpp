@@ -3,25 +3,33 @@
 #include <array>
 #include <cstdint>
 
+#include "CanFdFrame.hpp"
+
 /**
- * Vehicle-facing BMS CAN protocol (classic 8-byte frames).
- * Wire format only — no HAL; transport uses CanBus::sendStd / read().
+ * BMS CAN Protocol Application Layer
+ *
+ * This module defines the CAN message protocol for communication between
+ * the Primary BMS MCU and the vehicle's main controller.
+ *
+ * Protocol Design:
+ * - Custom protocol optimized for BMS data
+ * - Supports both classic CAN (8 bytes) and CAN FD (up to 64 bytes)
+ * - Periodic status messages (heartbeat, pack status)
+ * - Event-driven messages (faults, warnings)
+ * - Command/response messages (control, configuration)
+ *
+ * Kept in sync with DistributedBMSPrimary (first project).
  */
 
 namespace BmsCanProtocol {
 
-/** Classic CAN frame for encode/decode (not CAN FD). */
-struct BmsCanFrame {
-    uint32_t id = 0;
-    bool extended = false;
-    uint8_t dlc = 0;
-    std::array<uint8_t, 8> data{};
-};
-
 // ========== CAN ID Allocation ==========
+// ID-based: each CAN ID maps to a single message format.
+// Vehicle specification IDs (e.g. 0x040) + Primary BMS node IDs (0x180+).
 
 enum CanId : uint16_t {
-    BMS_STATUS = 0x040,
+    // Vehicle / specification IDs (ID-based, not device-based)
+    BMS_STATUS = 0x040,  // BMS Status: faults, contactors, daughter boards
     BMS_BATTERY_VOLTAGE = 0x041,
     BMS_BATTERY_TEMPERATURE = 0x042,
     BMS_BATTERY_CURRENT = 0x043,
@@ -43,6 +51,8 @@ enum CanId : uint16_t {
     BMS_DETAILED_STATUS = 0x1C0,
     BMS_CELL_DETAILS = 0x1C1,
 };
+
+// ========== Message Types ==========
 
 enum BmsStatusFaultCode : uint16_t {
     BMS_FAULT_NONE = 0x0000,
@@ -184,18 +194,18 @@ struct ConfigResponseMsg {
 
 class MessageEncoder {
 public:
-    static BmsCanFrame encodeBmsStatus(const BmsStatusMsg& msg);
-    static BmsCanFrame encodeBatteryVoltage(const BatteryVoltageMsg& msg);
-    static BmsCanFrame encodeBatteryTemperature(const BatteryTemperatureMsg& msg);
-    static BmsCanFrame encodeBatteryCurrent(const BatteryCurrentMsg& msg);
-    static BmsCanFrame encodeHeartbeat(const HeartbeatMsg& msg);
-    static BmsCanFrame encodePackStatus(const PackStatusMsg& msg);
-    static BmsCanFrame encodeTemperature(const TemperatureMsg& msg);
-    static BmsCanFrame encodeCellVoltages(const CellVoltagesMsg& msg);
-    static BmsCanFrame encodeFaultStatus(const FaultStatusMsg& msg);
-    static BmsCanFrame encodeWarningStatus(const WarningStatusMsg& msg);
-    static BmsCanFrame encodeStateChange(const StateChangeMsg& msg);
-    static BmsCanFrame encodeConfigResponse(const ConfigResponseMsg& msg);
+    static CanFdFrame encodeBmsStatus(const BmsStatusMsg& msg);
+    static CanFdFrame encodeBatteryVoltage(const BatteryVoltageMsg& msg);
+    static CanFdFrame encodeBatteryTemperature(const BatteryTemperatureMsg& msg);
+    static CanFdFrame encodeBatteryCurrent(const BatteryCurrentMsg& msg);
+    static CanFdFrame encodeHeartbeat(const HeartbeatMsg& msg);
+    static CanFdFrame encodePackStatus(const PackStatusMsg& msg);
+    static CanFdFrame encodeTemperature(const TemperatureMsg& msg);
+    static CanFdFrame encodeCellVoltages(const CellVoltagesMsg& msg);
+    static CanFdFrame encodeFaultStatus(const FaultStatusMsg& msg);
+    static CanFdFrame encodeWarningStatus(const WarningStatusMsg& msg);
+    static CanFdFrame encodeStateChange(const StateChangeMsg& msg);
+    static CanFdFrame encodeConfigResponse(const ConfigResponseMsg& msg);
 
 private:
     static void packUint16(uint8_t* buf, uint16_t value);
@@ -205,8 +215,8 @@ private:
 
 class MessageDecoder {
 public:
-    static bool decodeCommand(const BmsCanFrame& frame, CommandMsg& msg);
-    static bool decodeConfigRequest(const BmsCanFrame& frame, ConfigRequestMsg& msg);
+    static bool decodeCommand(const CanFdFrame& frame, CommandMsg& msg);
+    static bool decodeConfigRequest(const CanFdFrame& frame, ConfigRequestMsg& msg);
     static CanId getMessageType(uint16_t can_id);
 
 private:

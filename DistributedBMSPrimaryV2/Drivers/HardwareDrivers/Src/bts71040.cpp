@@ -59,6 +59,8 @@ uint8_t Bts71040::readInputsMask() const {
 /* ---------------- SPI core ---------------- */
 
 HAL_StatusTypeDef Bts71040::transfer8(uint8_t tx, uint8_t& rx) {
+    // BTS71040 uses 8-bit SPI command/response frames; each transaction is one byte command in, one byte out.
+    // The returned byte corresponds to the previous command pipeline stage per datasheet SPI timing.
     csLow();
     HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(hspi_, &tx, &rx, 1, 2);
     csHigh();
@@ -76,20 +78,22 @@ HAL_StatusTypeDef Bts71040::xfer8(uint8_t tx, uint8_t& rx) {
 HAL_StatusTypeDef Bts71040::writeOUT(uint8_t out_mask4, uint8_t* prev_resp) {
     uint8_t rx=0;
     HAL_StatusTypeDef st = transfer8(static_cast<uint8_t>(WR_OUT | (out_mask4 & 0x0F)), rx);
-    if (st == HAL_OK && prev_resp) *prev_resp = rx; // this is the response to the previous frame
+    // Returned byte is the previous-frame response (pipelined protocol behavior).
+    if (st == HAL_OK && prev_resp) *prev_resp = rx;
     return st;
 }
 
 // OUT read: we must (1) send read command, (2) send dummy to fetch response
 HAL_StatusTypeDef Bts71040::readOUT(uint8_t& out_mask4) {
     uint8_t rx=0;
-    // Step 1: trigger read
-    HAL_StatusTypeDef st = transfer8(RD_OUT, rx); // rx = response to previous frame, ignore
+    // Step 1: issue read command (received byte still belongs to prior frame, ignore).
+    HAL_StatusTypeDef st = transfer8(RD_OUT, rx);
     if (st != HAL_OK) return st;
-    // Step 2: fetch response
+    // Step 2: clock a dummy byte to retrieve RD_OUT response.
     st = transfer8(0x00, rx);
     if (st != HAL_OK) return st;
-    // Response format (Table 32): OUT reply has high bits 1 0 0 x, lower nibble = OUT[3:0]
+    // Response format per BTS71040 datasheet configuration-response table (Table 32):
+    // lower nibble carries OUT[3:0].
     out_mask4 = (rx & 0x0F);
     return HAL_OK;
 }
@@ -102,7 +106,8 @@ HAL_StatusTypeDef Bts71040::readSTDDIAG(StdDiag& d) {
     st = transfer8(0x00, r); // fetch
     if (st != HAL_OK) return st;
 
-    // STDDIAG frame: 00 d d d d d d  (lower 6 bits meaningful)
+    // STDDIAG frame layout (diagnostic response format): only lower 6 bits are payload.
+    // Fields are decoded as TER/CSV/LHI/SLP/SBM/VSMON per datasheet diagnostic bit definitions.
     uint8_t payload = r & 0x3F;
     d.raw  = payload;
     d.TER  = (payload >> 5) & 0x1;
@@ -120,6 +125,7 @@ HAL_StatusTypeDef Bts71040::readWRNDIAG(WrnDiag& d) {
     if (st != HAL_OK) return st;
     st = transfer8(0x00, r);
     if (st != HAL_OK) return st;
+    // WRNDIAG payload: one warning bit per channel in lower nibble.
     uint8_t payload = r & 0x0F;
     d.raw = payload;
     for (int i=0;i<4;++i) d.WRN[i] = (payload >> i) & 0x1;
@@ -132,6 +138,7 @@ HAL_StatusTypeDef Bts71040::readERRDIAG(ErrDiag& d) {
     if (st != HAL_OK) return st;
     st = transfer8(0x00, r);
     if (st != HAL_OK) return st;
+    // ERRDIAG payload: one error bit per channel in lower nibble.
     uint8_t payload = r & 0x0F;
     d.raw = payload;
     for (int i=0;i<4;++i) d.ERR[i] = (payload >> i) & 0x1;
@@ -158,10 +165,10 @@ HAL_StatusTypeDef Bts71040::writeDCR(uint8_t dcr_low4, uint8_t* prev_resp) {
 }
 
 HAL_StatusTypeDef Bts71040::setSWR(bool swr, uint8_t* prev_resp) {
-    // Read current DCR is possible but not strictly required; we set low4 with SWR desired and preserve MUX=000 (safe)
-    // Better approach: the caller tracks desired MUX; here we do minimal effect unless caller provides it explicitly.
+    // DCR low nibble packs SWR + MUX bits. Read-modify-write is used here to preserve current MUX
+    // while toggling only SWR (bank select between PCS/ICS and OCR/KRC paths).
     uint8_t cur_resp=0;
-    // Try to read DCR to preserve MUX if SPI link is up
+    // Read DCR response through command+dummy sequence.
     (void)transfer8(RD_DCR, cur_resp);
     (void)transfer8(0x00, cur_resp);
     uint8_t low4 = cur_resp & 0x0F;        // DCR.SWR (bit3) and DCR.MUX (2:0)
@@ -178,6 +185,7 @@ HAL_StatusTypeDef Bts71040::writeHWCR(uint8_t hwcr_low4, uint8_t* prev_resp) {
 
 HAL_StatusTypeDef Bts71040::writePCS(uint8_t pcs_low4, bool setSWRBefore) {
     if (setSWRBefore) {
+        // PCS register is in SWR=1 bank.
         HAL_StatusTypeDef st = setSWR(true, nullptr);
         if (st != HAL_OK) return st;
     }
@@ -187,6 +195,7 @@ HAL_StatusTypeDef Bts71040::writePCS(uint8_t pcs_low4, bool setSWRBefore) {
 
 HAL_StatusTypeDef Bts71040::writeOCR(uint8_t ocr_low4, bool setSWRBefore) {
     if (setSWRBefore) {
+        // OCR register is in SWR=0 bank.
         HAL_StatusTypeDef st = setSWR(false, nullptr);
         if (st != HAL_OK) return st;
     }
@@ -196,6 +205,7 @@ HAL_StatusTypeDef Bts71040::writeOCR(uint8_t ocr_low4, bool setSWRBefore) {
 
 HAL_StatusTypeDef Bts71040::writeKRC(uint8_t krc_low4, bool setSWRBefore) {
     if (setSWRBefore) {
+        // KRC register is in SWR=0 bank.
         HAL_StatusTypeDef st = setSWR(false, nullptr);
         if (st != HAL_OK) return st;
     }
@@ -205,6 +215,7 @@ HAL_StatusTypeDef Bts71040::writeKRC(uint8_t krc_low4, bool setSWRBefore) {
 
 HAL_StatusTypeDef Bts71040::writeRCD(uint8_t rcd_low4, bool setSWRBefore) {
     if (setSWRBefore) {
+        // RCD register is in SWR=1 bank.
         HAL_StatusTypeDef st = setSWR(true, nullptr);
         if (st != HAL_OK) return st;
     }
@@ -230,7 +241,8 @@ uint8_t Bts71040::computeChecksum4(
     uint8_t OCR, uint8_t RCD, uint8_t KRC, uint8_t SRC,
     bool COL, uint8_t PCC)
 {
-    // Build the 5x4 matrix columns (bit3..bit0) and compute parity
+    // Build the 5x4 matrix described by BTS71040 checksum definition:
+    // rows = {OCR, RCD, KRC, SRC, HWCR/PCS}, columns = bit3..bit0.
     auto parity_even = [](uint8_t col)->uint8_t {
         // even parity: result 0 if #ones even, 1 if odd
         uint8_t ones = __builtin_popcount(col & 0x1F); // we’ll pass 5 rows packed in LSBs
