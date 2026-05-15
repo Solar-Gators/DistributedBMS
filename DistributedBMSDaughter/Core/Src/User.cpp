@@ -12,14 +12,14 @@
  * Set to 0 for production: real AFE cell read + DMA NTC channels.
  */
 #ifndef USE_STANDIN_SENSORS
-#define USE_STANDIN_SENSORS 1
+#define USE_STANDIN_SENSORS 0
 #endif
 
 #include "User.hpp"
 
 //Lower Level Drivers
 // #include "BQ7692000.hpp"
-#include "BQ76925PWR.hpp"
+#include "BQ76907.hpp"
 
 //Data handlers
 #include "BMS.hpp"
@@ -38,7 +38,7 @@
 
 
 //hardware intialization
-BQ76925PWR bq(&hi2c2);
+BQ76907 bq(&hi2c2);
 static CanBus can1(hcan1);
 //CANDriver::CANDevice can(&hcan1);
 
@@ -82,55 +82,20 @@ static constexpr std::array<uint16_t, CELLS> kStandinNtcCounts = {{
 bool debugMode;
 
 #if !USE_STANDIN_SENSORS
-// Real VCOUT + ADC (used when USE_STANDIN_SENSORS is 0).
+// Real BQ76907 direct-command reads (used when USE_STANDIN_SENSORS is 0).
+// Logical pack cell order (0..5) maps to BQ cell channels 1..5 and 7 (skip 6).
+static constexpr std::array<uint8_t, CELLS> kBqCellMap1Based = {{1u, 2u, 3u, 4u, 5u, 7u}};
+
 static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
 {
-    // Use MCU ADC reference (e.g. 3.3 V), not AFE VREF (3.0 V). AFE gain 0.6 from REF_SEL=1.
-    constexpr float ADC_FULL_SCALE = 4095.0f;
-    constexpr float ADC_VREF_V     = 3.3f;   // STM32 VREF+; match your hardware
-    constexpr float VCOUT_GAIN     = 0.6f;
-
     for (uint8_t cell = 0; cell < CELLS; ++cell)
     {
-        if (bq.setCellForVCOUT(cell) != HAL_OK)
+        uint16_t mv = 0;
+        if (bq.readCellVoltage(kBqCellMap1Based[cell], mv) != HAL_OK)
         {
             return HAL_ERROR;
         }
-
-        // Datasheet t_VCOUT: allow ~100 µs+ for VCOUT to settle after mux change.
-        HAL_Delay(10);
-
-        // Blocking single conversion on VCOUT channel (configured as sole regular channel).
-        if (HAL_ADC_Start(&hadc1) != HAL_OK)
-        {
-            return HAL_ERROR;
-        }
-        if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) != HAL_OK)
-        {
-            HAL_ADC_Stop(&hadc1);
-            return HAL_ERROR;
-        }
-
-        uint16_t vcout_counts = static_cast<uint16_t>(HAL_ADC_GetValue(&hadc1));
-        HAL_ADC_Stop(&hadc1);
-
-        if (HAL_ADC_Start(&hadc1) != HAL_OK)
-		{
-			return HAL_ERROR;
-		}
-		if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) != HAL_OK)
-		{
-			HAL_ADC_Stop(&hadc1);
-			return HAL_ERROR;
-		}
-
-		vcout_counts = static_cast<uint16_t>(HAL_ADC_GetValue(&hadc1));
-		HAL_ADC_Stop(&hadc1);
-
-        float v_vcout = (static_cast<float>(vcout_counts) / ADC_FULL_SCALE) * ADC_VREF_V;
-        float v_cell  = v_vcout / VCOUT_GAIN;
-
-        cell_mV[cell] = static_cast<uint16_t>(v_cell * 1000.0f + 0.5f);
+        cell_mV[cell] = mv;
     }
 
     return HAL_OK;
