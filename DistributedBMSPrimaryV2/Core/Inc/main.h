@@ -77,6 +77,8 @@ void Error_Handler(void);
 #define IN2_GPIO_Port GPIOB
 #define IN3_Pin GPIO_PIN_2
 #define IN3_GPIO_Port GPIOB
+#define STB_FDCAN3_Pin GPIO_PIN_7
+#define STB_FDCAN3_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

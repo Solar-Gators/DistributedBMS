@@ -104,6 +104,8 @@ void setup() {
     cfg.ina226_read_period_ms = PrimaryV2Contract::INA226_READ_PERIOD_MS;
     bms_manager.setConfig(cfg);
 
+    bms_manager.setDebugMode(true, true, true);
+
     bms_manager.init();
 
     BmsCanInterface::Config vcan_cfg{};
