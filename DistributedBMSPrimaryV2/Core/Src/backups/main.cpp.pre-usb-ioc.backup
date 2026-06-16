@@ -1,3 +1,24 @@
+/*
+ * BACKUP: DistributedBMSPrimaryV2/Core/Src/main.cpp
+ * Saved before CubeMX .ioc USB changes (2026-05-18).
+ * Do not build this file — reference only for merging after codegen.
+ *
+ * Custom USER CODE blocks to restore into regenerated main.cpp:
+ *   - Includes: #include "User.hpp"
+ *   - USER CODE 2: setup() call + FDCAN comment
+ *   - RTOS_MUTEX: UserInitRtosSync()
+ *
+ * Non-USER edits (Cube may overwrite — re-apply manually if lost):
+ *   - SPI1_Init: ADS131M02 comment + SPI_PHASE_2EDGE (CPHA=1)
+ *   - osThreadAttr_t names: canRxTask, safetyTask, fleetTask, vehicleTxTask, auxTask
+ *   - Stack sizes: 2K/3K/2K/3K/2K
+ *   - Thread create order + Start* task symbols
+ *
+ * Related files NOT in this backup (usually unchanged by USB .ioc):
+ *   - Core/Src/User.cpp, Core/Inc/main.h (check USER CODE sections)
+ *   - Core/Src/stm32g4xx_hal_msp.c (MSP for new USB)
+ */
+
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
@@ -123,9 +144,6 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  /* TIM3 is HAL tick; unfreeze so HAL_GetTick advances while debugger is halted. */
-  __HAL_DBGMCU_UNFREEZE_TIM3();
-  __HAL_DBGMCU_UNFREEZE_I2C2_TIMEOUT();
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -136,8 +154,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  __HAL_DBGMCU_UNFREEZE_TIM3();
-  __HAL_DBGMCU_UNFREEZE_I2C2_TIMEOUT();
+
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */

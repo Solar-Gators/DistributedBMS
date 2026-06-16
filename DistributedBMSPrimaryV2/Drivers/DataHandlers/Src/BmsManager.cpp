@@ -14,8 +14,43 @@
 #include "stm32g4xx_hal_tim.h"
 
 #include <cstdint>
-#include <cmath>
 #include <cstring>
+
+namespace {
+
+bool isAdvancedPwmTimer(const TIM_HandleTypeDef* tim)
+{
+    return tim != nullptr && (tim->Instance == TIM1 || tim->Instance == TIM8);
+}
+
+/** TIM8 CH1/CH2 → PC6/PC7 (FAN1/FAN2 PWM). Advanced timers need MOE. */
+void startFanPwmOutputs(TIM_HandleTypeDef* tim, uint32_t primary_channel)
+{
+    (void)HAL_TIM_PWM_Start(tim, primary_channel);
+    if (tim->Instance == TIM8) {
+        if (primary_channel != TIM_CHANNEL_1) {
+            (void)HAL_TIM_PWM_Start(tim, TIM_CHANNEL_1);
+        }
+        if (primary_channel != TIM_CHANNEL_2) {
+            (void)HAL_TIM_PWM_Start(tim, TIM_CHANNEL_2);
+        }
+        __HAL_TIM_MOE_ENABLE(tim);
+    } else if (isAdvancedPwmTimer(tim)) {
+        __HAL_TIM_MOE_ENABLE(tim);
+    }
+}
+
+void setFanPwmCompareAll(TIM_HandleTypeDef* tim, uint32_t primary_channel, uint32_t pulse)
+{
+    if (tim->Instance == TIM8) {
+        __HAL_TIM_SET_COMPARE(tim, TIM_CHANNEL_1, pulse);
+        __HAL_TIM_SET_COMPARE(tim, TIM_CHANNEL_2, pulse);
+    } else {
+        __HAL_TIM_SET_COMPARE(tim, primary_channel, pulse);
+    }
+}
+
+}  // namespace
 
 // ========== Constructor ==========
 BmsManager::BmsManager(BmsFleet* fleet,
@@ -84,7 +119,7 @@ void BmsManager::init()
 
 
     if (fan_pwm_tim_ != nullptr) {
-        HAL_TIM_PWM_Start(fan_pwm_tim_, fan_pwm_channel_);
+        startFanPwmOutputs(fan_pwm_tim_, fan_pwm_channel_);
         fan_pwm_initialized_ = true;
         setFanPwmDuty(50);
     }
@@ -133,6 +168,31 @@ float BmsManager::getAuxCurrent_A() const
 float BmsManager::getPackVoltage_V() const
 {
     return pack_voltage_V_;
+}
+
+float BmsManager::getLastPackAdcVoltage_V() const
+{
+    return last_pack_adc_voltage_V_;
+}
+
+float BmsManager::getLastAuxBusVoltage_V() const
+{
+    return last_aux_bus_V_;
+}
+
+float BmsManager::getLastAuxShuntVoltage_V() const
+{
+    return last_aux_shunt_V_;
+}
+
+bool BmsManager::wasLastPackAdcReadOk() const
+{
+    return last_pack_adc_read_ok_;
+}
+
+bool BmsManager::wasLastAuxReadOk() const
+{
+    return last_aux_read_ok_;
 }
 
 bool BmsManager::hasValidData(uint32_t now_ms) const
@@ -328,8 +388,12 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
     // Rate-limit sensor reads to keep loop cadence deterministic.
     if (battery_current_adc_ != nullptr &&
         (now_ms - last_battery_current_update_ms_) >= config_.ads1115_read_period_ms) {
-        float adc_voltage_V;
-        if (battery_current_adc_->readSingleEnded(config_.current_adc_channel, adc_voltage_V) == HAL_OK) {
+        float adc_voltage_V = 0.0f;
+        const HAL_StatusTypeDef st =
+            battery_current_adc_->readSingleEnded(config_.current_adc_channel, adc_voltage_V);
+        last_pack_adc_read_ok_ = (st == HAL_OK);
+        if (st == HAL_OK) {
+            last_pack_adc_voltage_V_ = adc_voltage_V;
             battery_current_A_ = convertAdcToCurrent(adc_voltage_V);
         }
         last_battery_current_update_ms_ = now_ms;
@@ -338,8 +402,12 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
     if (aux_current_monitor_ != nullptr &&
         (now_ms - last_aux_current_update_ms_) >= config_.ina226_read_period_ms) {
         INA226::Measurement m;
-        if (aux_current_monitor_->readMeasurement(m) == HAL_OK) {
-            aux_current_A_ = m.current_A;
+        const HAL_StatusTypeDef st = aux_current_monitor_->readMeasurement(m);
+        last_aux_read_ok_ = (st == HAL_OK);
+        if (st == HAL_OK) {
+            last_aux_bus_V_ = m.bus_V;
+            last_aux_shunt_V_ = m.shunt_V;
+            aux_current_A_ = m.current_A - config_.aux_current_offset_A;
         }
         last_aux_current_update_ms_ = now_ms;
     }
@@ -467,6 +535,10 @@ void BmsManager::updateStateMachine(uint32_t now_ms)
 
 void BmsManager::updateContactors(uint32_t now_ms)
 {
+    if (external_contactor_control_) {
+        return;
+    }
+
     // Debug mode: Force contactors closed (bypasses all safety checks)
     if (config_.debug_mode.enabled && config_.debug_mode.force_contactors_closed) {
         if (!contactors_closed_) {
@@ -739,27 +811,12 @@ bool BmsManager::checkDataStale(uint32_t now_ms)
 // ========== Private: Current Measurement ==========
 float BmsManager::convertAdcToCurrent(float adc_voltage_V)
 {
-    // Nonlinear calibration of battery current based on ADS1115 voltage reading.
-    // This uses the empirically derived curve from the User.cpp test code:
-    //   y = 101.4864 + (-29.84563 - 101.4864) / (1 + (x / 2.756892) ^ 2.643521)
-    // where:
-    //   x = ADC voltage (V)
-    //   y = battery current (A)
-    //
-    // Note: config_.current_* fields are currently unused by this fit.
-
-    const float a = 101.4864f;
-    const float b = -29.84563f;
-    const float c = 2.756892f;
-    const float d = 2.643521f;
-
-
-
-    float x = adc_voltage_V;
-    float denom = 1.0f + std::pow(x / c, d);
-    float y = a + (b - a) / denom;
-
-    return y;
+    // Pack current: I = (V_adc - V_zero) / (R_sense * gain). V_zero = ADS AIN0 at 0 A.
+    const float denom = config_.current_shunt_resistance_ohm * config_.current_gain;
+    if (denom <= 0.0f) {
+        return 0.0f;
+    }
+    return (adc_voltage_V - config_.current_offset_V) / denom;
 }
 
 // ========== Private: Hardware Control ==========
@@ -807,7 +864,18 @@ void BmsManager::setFanPwmDuty(uint8_t percent)
 
     const uint32_t arr = __HAL_TIM_GET_AUTORELOAD(fan_pwm_tim_);
     const uint32_t pulse = (arr * static_cast<uint32_t>(percent)) / 100U;
-    __HAL_TIM_SET_COMPARE(fan_pwm_tim_, fan_pwm_channel_, pulse);
+    setFanPwmCompareAll(fan_pwm_tim_, fan_pwm_channel_, pulse);
+    fan_speed_percent_ = percent;
+}
+
+void BmsManager::setExternalContactorControl(bool enabled)
+{
+    external_contactor_control_ = enabled;
+}
+
+void BmsManager::setReportedContactorsClosed(bool closed)
+{
+    contactors_closed_ = closed;
 }
 
 void BmsManager::setFanPwmTimer(TIM_HandleTypeDef* tim, uint32_t channel)

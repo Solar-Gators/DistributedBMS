@@ -35,9 +35,8 @@ public:
         uint32_t battery_voltage_period_ms = 50;     // Battery Voltage (0x041) every 50ms
         uint32_t battery_temperature_period_ms = 50; // Battery Temperature (0x042) every 50ms
         uint32_t battery_current_period_ms = 50;     // Battery Current (0x043) every 50ms
-        // Not used by updatePeriodicTransmission (only 0x040–0x043); kept for API / manual send.
-        uint32_t heartbeat_period_ms = 100;
-        uint32_t pack_status_period_ms = 50;
+        uint32_t heartbeat_period_ms = 100;          // Heartbeat (0x180)
+        uint32_t pack_status_period_ms = 50;         // Pack status (0x181)
         uint32_t temperature_period_ms = 100;
         uint32_t cell_voltages_period_ms = 100;
 
@@ -130,6 +129,8 @@ private:
     uint32_t last_battery_voltage_ms_ = 0;
     uint32_t last_battery_temperature_ms_ = 0;
     uint32_t last_battery_current_ms_ = 0;
+    uint32_t last_heartbeat_ms_ = 0;
+    uint32_t last_pack_status_ms_ = 0;
     uint32_t last_tx_ms_ = 0;
 
     // State tracking for event-driven messages

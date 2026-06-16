@@ -62,6 +62,8 @@ public:
         float current_shunt_resistance_ohm = 0.001f;
         float current_gain = 1.0f;
         float current_offset_V = 0.0f;
+        /** INA226 aux (buck) zero offset in amps; subtract from raw reading. */
+        float aux_current_offset_A = 0.0f;
 
         uint32_t contactor_stagger_delay_ms = 500;
         uint32_t contactor_close_grace_period_ms = 500;
@@ -83,6 +85,11 @@ public:
     float getBatteryCurrent_A() const;
     float getAuxCurrent_A() const;
     float getPackVoltage_V() const;
+    float getLastPackAdcVoltage_V() const;
+    float getLastAuxBusVoltage_V() const;
+    float getLastAuxShuntVoltage_V() const;
+    bool wasLastPackAdcReadOk() const;
+    bool wasLastAuxReadOk() const;
     bool hasValidData(uint32_t now_ms) const;
 
     uint16_t getActiveFaults() const;
@@ -118,6 +125,9 @@ public:
     void setDebugMode(bool enabled, bool force_contactors = false, bool disable_faults = false);
     bool isDebugModeEnabled() const;
     void setFanPwmDuty(uint8_t percent);
+    /** When true, updateContactors() does not drive GPIO or clear contactors_closed_. */
+    void setExternalContactorControl(bool enabled);
+    void setReportedContactorsClosed(bool closed);
 
 private:
     void updateFaults(uint32_t now_ms);
@@ -176,10 +186,16 @@ private:
     float battery_current_A_;
     float aux_current_A_;
     float pack_voltage_V_;
+    float last_pack_adc_voltage_V_{0.0f};
+    float last_aux_bus_V_{0.0f};
+    float last_aux_shunt_V_{0.0f};
+    bool last_pack_adc_read_ok_{false};
+    bool last_aux_read_ok_{false};
     uint32_t last_battery_current_update_ms_;
     uint32_t last_aux_current_update_ms_;
 
     bool contactors_closed_;
+    bool external_contactor_control_{false};
     bool contactor_close_request_;
     bool contactor_open_request_;
     uint32_t contactor_stage_start_time_ms_;

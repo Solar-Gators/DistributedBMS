@@ -35,6 +35,8 @@ void BmsCanInterface::init(const Config& config) {
     last_battery_voltage_ms_ = 0;
     last_battery_temperature_ms_ = 0;
     last_battery_current_ms_ = 0;
+    last_heartbeat_ms_ = 0;
+    last_pack_status_ms_ = 0;
     last_tx_ms_ = 0;
     last_faults_ = bms_manager_.getActiveFaults();
     last_state_ = bms_manager_.getState();
@@ -130,6 +132,14 @@ void BmsCanInterface::updatePeriodicTransmission(uint32_t now_ms) {
     if ((now_ms - last_battery_current_ms_) >= config_.battery_current_period_ms) {
         sendBatteryCurrent();
         last_battery_current_ms_ = now_ms;
+    }
+    if ((now_ms - last_heartbeat_ms_) >= config_.heartbeat_period_ms) {
+        sendHeartbeat();
+        last_heartbeat_ms_ = now_ms;
+    }
+    if ((now_ms - last_pack_status_ms_) >= config_.pack_status_period_ms) {
+        sendPackStatus();
+        last_pack_status_ms_ = now_ms;
     }
 }
 
