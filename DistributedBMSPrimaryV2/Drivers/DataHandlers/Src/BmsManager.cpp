@@ -170,31 +170,6 @@ float BmsManager::getPackVoltage_V() const
     return pack_voltage_V_;
 }
 
-float BmsManager::getLastPackAdcVoltage_V() const
-{
-    return last_pack_adc_voltage_V_;
-}
-
-float BmsManager::getLastAuxBusVoltage_V() const
-{
-    return last_aux_bus_V_;
-}
-
-float BmsManager::getLastAuxShuntVoltage_V() const
-{
-    return last_aux_shunt_V_;
-}
-
-bool BmsManager::wasLastPackAdcReadOk() const
-{
-    return last_pack_adc_read_ok_;
-}
-
-bool BmsManager::wasLastAuxReadOk() const
-{
-    return last_aux_read_ok_;
-}
-
 bool BmsManager::hasValidData(uint32_t now_ms) const
 {
     if (fleet_ == nullptr) {
@@ -391,9 +366,7 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
         float adc_voltage_V = 0.0f;
         const HAL_StatusTypeDef st =
             battery_current_adc_->readSingleEnded(config_.current_adc_channel, adc_voltage_V);
-        last_pack_adc_read_ok_ = (st == HAL_OK);
         if (st == HAL_OK) {
-            last_pack_adc_voltage_V_ = adc_voltage_V;
             battery_current_A_ = convertAdcToCurrent(adc_voltage_V);
         }
         last_battery_current_update_ms_ = now_ms;
@@ -403,10 +376,7 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
         (now_ms - last_aux_current_update_ms_) >= config_.ina226_read_period_ms) {
         INA226::Measurement m;
         const HAL_StatusTypeDef st = aux_current_monitor_->readMeasurement(m);
-        last_aux_read_ok_ = (st == HAL_OK);
         if (st == HAL_OK) {
-            last_aux_bus_V_ = m.bus_V;
-            last_aux_shunt_V_ = m.shunt_V;
             aux_current_A_ = m.current_A - config_.aux_current_offset_A;
         }
         last_aux_current_update_ms_ = now_ms;

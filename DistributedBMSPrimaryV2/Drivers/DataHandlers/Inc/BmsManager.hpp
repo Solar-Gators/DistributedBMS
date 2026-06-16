@@ -85,11 +85,6 @@ public:
     float getBatteryCurrent_A() const;
     float getAuxCurrent_A() const;
     float getPackVoltage_V() const;
-    float getLastPackAdcVoltage_V() const;
-    float getLastAuxBusVoltage_V() const;
-    float getLastAuxShuntVoltage_V() const;
-    bool wasLastPackAdcReadOk() const;
-    bool wasLastAuxReadOk() const;
     bool hasValidData(uint32_t now_ms) const;
 
     uint16_t getActiveFaults() const;
@@ -186,11 +181,6 @@ private:
     float battery_current_A_;
     float aux_current_A_;
     float pack_voltage_V_;
-    float last_pack_adc_voltage_V_{0.0f};
-    float last_aux_bus_V_{0.0f};
-    float last_aux_shunt_V_{0.0f};
-    bool last_pack_adc_read_ok_{false};
-    bool last_aux_read_ok_{false};
     uint32_t last_battery_current_update_ms_;
     uint32_t last_aux_current_update_ms_;
 
