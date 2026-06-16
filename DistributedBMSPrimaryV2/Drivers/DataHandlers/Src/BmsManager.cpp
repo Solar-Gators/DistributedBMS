@@ -55,10 +55,12 @@ void setFanPwmCompareAll(TIM_HandleTypeDef* tim, uint32_t primary_channel, uint3
 // ========== Constructor ==========
 BmsManager::BmsManager(BmsFleet* fleet,
                        ADS1115* battery_current_adc,
-                       INA226* aux_current_monitor)
+                       INA226* aux_current_monitor,
+                       INA226* fan_current_monitor)
     : fleet_(fleet)
     , battery_current_adc_(battery_current_adc)
     , aux_current_monitor_(aux_current_monitor)
+    , fan_current_monitor_(fan_current_monitor)
     , contactor_gpio_port_(nullptr)
     , contactor_gpio_pin_(0)
     , contactor_gpio_active_high_(true)  // Default: high = closed
@@ -74,9 +76,11 @@ BmsManager::BmsManager(BmsFleet* fleet,
     , fault_recovery_start_time_ms_(0)
     , battery_current_A_(0.0f)
     , aux_current_A_(0.0f)
+    , fan_current_A_(0.0f)
     , pack_voltage_V_(0.0f)
     , last_battery_current_update_ms_(0)
     , last_aux_current_update_ms_(0)
+    , last_fan_current_update_ms_(0)
     , contactors_closed_(false)
     , contactor_close_request_(false)
     , contactor_open_request_(false)
@@ -163,6 +167,11 @@ float BmsManager::getBatteryCurrent_A() const
 float BmsManager::getAuxCurrent_A() const
 {
     return aux_current_A_;
+}
+
+float BmsManager::getFanCurrent_A() const
+{
+    return fan_current_A_;
 }
 
 float BmsManager::getPackVoltage_V() const
@@ -380,6 +389,15 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
             aux_current_A_ = m.current_A - config_.aux_current_offset_A;
         }
         last_aux_current_update_ms_ = now_ms;
+    }
+
+    if (fan_current_monitor_ != nullptr &&
+        (now_ms - last_fan_current_update_ms_) >= config_.ina226_read_period_ms) {
+        INA226::Measurement m;
+        if (fan_current_monitor_->readMeasurement(m) == HAL_OK) {
+            fan_current_A_ = m.current_A;
+        }
+        last_fan_current_update_ms_ = now_ms;
     }
 
     // Update pack voltage from fleet data

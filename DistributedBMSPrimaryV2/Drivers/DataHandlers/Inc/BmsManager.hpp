@@ -75,7 +75,10 @@ public:
         } debug_mode;
     };
 
-    BmsManager(BmsFleet* fleet, ADS1115* battery_current_adc, INA226* aux_current_monitor);
+    BmsManager(BmsFleet* fleet,
+               ADS1115* battery_current_adc,
+               INA226* aux_current_monitor,
+               INA226* fan_current_monitor = nullptr);
 
     void init();
     void update(uint32_t now_ms);
@@ -84,6 +87,7 @@ public:
     FleetSummaryData getFleetSummary() const;
     float getBatteryCurrent_A() const;
     float getAuxCurrent_A() const;
+    float getFanCurrent_A() const;
     float getPackVoltage_V() const;
     bool hasValidData(uint32_t now_ms) const;
 
@@ -160,6 +164,7 @@ private:
     osMutexId_t fleet_access_mutex_{nullptr};
     ADS1115* battery_current_adc_;
     INA226* aux_current_monitor_;
+    INA226* fan_current_monitor_;
 
     GPIO_TypeDef* contactor_gpio_port_;
     uint16_t contactor_gpio_pin_;
@@ -180,9 +185,11 @@ private:
 
     float battery_current_A_;
     float aux_current_A_;
+    float fan_current_A_;
     float pack_voltage_V_;
     uint32_t last_battery_current_update_ms_;
     uint32_t last_aux_current_update_ms_;
+    uint32_t last_fan_current_update_ms_;
 
     bool contactors_closed_;
     bool external_contactor_control_{false};

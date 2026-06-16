@@ -1,6 +1,6 @@
 /*
  * FDCAN2: daughter CAN (IDs 0x100..). FDCAN3: vehicle CAN (0x040.., 0x1A0 commands).
- * I2C2: ADS1115 (pack current sense), INA226 (aux current).
+ * I2C2: ADS1115 (pack current), INA226 @0x40 (aux), INA226 @0x44 (fan).
  * SPI1 + NCS_A: ADS131M02 (24-bit ADC) bring-up.
  * IN0/IN1 + BTS71040 (SPI1, NCS_L): main contactor drive on PrimaryV2.
  * RX uses HAL_FDCAN_RxFifo0Callback in CanBus.cpp (multi-instance dispatch).
@@ -15,6 +15,7 @@
 #include "PrimaryV2Contract.hpp"
 #include "CanBus.hpp"
 #include "cmsis_os.h"
+#include "ina226.hpp"
 #include "bts71040.hpp"
 #include "main.h"
 
@@ -44,10 +45,11 @@ static CanBus vehicle_can(hfdcan3);
 static BmsFleet fleet;
 
 static ADS1115 adc(&hi2c2, ADS1115::Addr7::GND, ADS1115::Pga::FS_4_096V, ADS1115::DataRate::SPS_128);
-static INA226 ina(&hi2c2, INA226::I2C_ADDR_DEVICE1);
+static INA226 ina_aux(&hi2c2, INA226::I2C_ADDR_DEVICE1);
+static INA226 ina_fan(&hi2c2, INA226::I2C_ADDR_DEVICE2);
 static Bts71040 bts71040(&hspi1, makeBts71040Pins());
 
-static BmsManager bms_manager(&fleet, &adc, &ina);
+static BmsManager bms_manager(&fleet, &adc, &ina_aux, &ina_fan);
 static BmsCanInterface vehicle_iface(vehicle_can, bms_manager);
 
 static Ads131m02 ads131m02(&hspi1, {NCS_A_GPIO_Port, NCS_A_Pin});
@@ -195,8 +197,9 @@ void setup() {
     fleet.registerDaughter(0x102, 2);
 
     (void)adc.init();
-    /* U103 aux path: R102 shunt on +12V_BUCK → +12V_BUCK_A (20 mΩ on this board). */
-    (void)ina.init(0.02f, 100.0f);
+    /* U103 aux: R102 20 mΩ on +12V_BUCK → +12V_BUCK_A. U403 fan: R513 on +12V_P → FAN_Power. */
+    (void)ina_aux.init(0.02f, 100.0f);
+    (void)ina_fan.init(0.02f, 100.0f);
 
     s_bts71040 = &bts71040;
     bts71040HwInit();
@@ -237,6 +240,8 @@ void setup() {
     BmsCanInterface::Config vcan_cfg{};
     vcan_cfg.heartbeat_period_ms = 100;
     vcan_cfg.pack_status_period_ms = 100;
+    vcan_cfg.aux_current_period_ms = 100;
+    vcan_cfg.fan_current_period_ms = 100;
     vehicle_iface.init(vcan_cfg);
 
     HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_SET);

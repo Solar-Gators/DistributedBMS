@@ -35,6 +35,8 @@ void BmsCanInterface::init(const Config& config) {
     last_battery_voltage_ms_ = 0;
     last_battery_temperature_ms_ = 0;
     last_battery_current_ms_ = 0;
+    last_aux_current_ms_ = 0;
+    last_fan_current_ms_ = 0;
     last_heartbeat_ms_ = 0;
     last_pack_status_ms_ = 0;
     last_tx_ms_ = 0;
@@ -80,6 +82,14 @@ void BmsCanInterface::sendBatteryCurrent() {
     sendWire(BmsCanProtocol::MessageEncoder::encodeBatteryCurrent(createBatteryCurrentMsg()));
 }
 
+void BmsCanInterface::sendAuxCurrent() {
+    sendWire(BmsCanProtocol::MessageEncoder::encodeAuxCurrent(createAuxCurrentMsg()));
+}
+
+void BmsCanInterface::sendFanCurrent() {
+    sendWire(BmsCanProtocol::MessageEncoder::encodeFanCurrent(createFanCurrentMsg()));
+}
+
 void BmsCanInterface::sendHeartbeat() {
     sendWire(BmsCanProtocol::MessageEncoder::encodeHeartbeat(createHeartbeatMsg(HAL_GetTick())));
 }
@@ -116,7 +126,7 @@ const BmsCanInterface::Config& BmsCanInterface::getConfig() const {
 }
 
 void BmsCanInterface::updatePeriodicTransmission(uint32_t now_ms) {
-    // Vehicle spec IDs 0x040–0x043 only (same periodic set as DistributedBMSPrimary).
+    // Vehicle spec IDs 0x040–0x045.
     if ((now_ms - last_bms_status_ms_) >= config_.bms_status_period_ms) {
         sendBmsStatus();
         last_bms_status_ms_ = now_ms;
@@ -132,6 +142,14 @@ void BmsCanInterface::updatePeriodicTransmission(uint32_t now_ms) {
     if ((now_ms - last_battery_current_ms_) >= config_.battery_current_period_ms) {
         sendBatteryCurrent();
         last_battery_current_ms_ = now_ms;
+    }
+    if ((now_ms - last_aux_current_ms_) >= config_.aux_current_period_ms) {
+        sendAuxCurrent();
+        last_aux_current_ms_ = now_ms;
+    }
+    if ((now_ms - last_fan_current_ms_) >= config_.fan_current_period_ms) {
+        sendFanCurrent();
+        last_fan_current_ms_ = now_ms;
     }
     if ((now_ms - last_heartbeat_ms_) >= config_.heartbeat_period_ms) {
         sendHeartbeat();
@@ -283,6 +301,18 @@ BmsCanProtocol::BatteryTemperatureMsg BmsCanInterface::createBatteryTemperatureM
 BmsCanProtocol::BatteryCurrentMsg BmsCanInterface::createBatteryCurrentMsg() {
     BmsCanProtocol::BatteryCurrentMsg msg{};
     msg.current_A = bms_manager_.getBatteryCurrent_A();
+    return msg;
+}
+
+BmsCanProtocol::AuxCurrentMsg BmsCanInterface::createAuxCurrentMsg() {
+    BmsCanProtocol::AuxCurrentMsg msg{};
+    msg.current_A = bms_manager_.getAuxCurrent_A();
+    return msg;
+}
+
+BmsCanProtocol::FanCurrentMsg BmsCanInterface::createFanCurrentMsg() {
+    BmsCanProtocol::FanCurrentMsg msg{};
+    msg.current_A = bms_manager_.getFanCurrent_A();
     return msg;
 }
 

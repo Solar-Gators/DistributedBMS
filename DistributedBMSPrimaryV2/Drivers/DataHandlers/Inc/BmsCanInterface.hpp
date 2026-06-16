@@ -35,6 +35,8 @@ public:
         uint32_t battery_voltage_period_ms = 50;     // Battery Voltage (0x041) every 50ms
         uint32_t battery_temperature_period_ms = 50; // Battery Temperature (0x042) every 50ms
         uint32_t battery_current_period_ms = 50;     // Battery Current (0x043) every 50ms
+        uint32_t aux_current_period_ms = 100;          // Aux rail current (0x044)
+        uint32_t fan_current_period_ms = 100;          // Fan rail current (0x045)
         uint32_t heartbeat_period_ms = 100;          // Heartbeat (0x180)
         uint32_t pack_status_period_ms = 50;         // Pack status (0x181)
         uint32_t temperature_period_ms = 100;
@@ -65,6 +67,8 @@ public:
     void sendBatteryVoltage();    // Battery Voltage 0x041 - pack + high/low cell
     void sendBatteryTemperature(); // Battery Temperature 0x042 - high/avg temp
     void sendBatteryCurrent();     // Battery Current 0x043 - current as float
+    void sendAuxCurrent();         // Aux Current 0x044 - buck rail amps (float)
+    void sendFanCurrent();         // Fan Current 0x045 - fan rail amps (float)
     void sendHeartbeat();
     void sendPackStatus();
     void sendTemperature();
@@ -103,6 +107,8 @@ private:
     BmsCanProtocol::BatteryVoltageMsg createBatteryVoltageMsg();
     BmsCanProtocol::BatteryTemperatureMsg createBatteryTemperatureMsg();
     BmsCanProtocol::BatteryCurrentMsg createBatteryCurrentMsg();
+    BmsCanProtocol::AuxCurrentMsg createAuxCurrentMsg();
+    BmsCanProtocol::FanCurrentMsg createFanCurrentMsg();
     BmsCanProtocol::HeartbeatMsg createHeartbeatMsg(uint32_t now_ms);
     BmsCanProtocol::PackStatusMsg createPackStatusMsg();
     BmsCanProtocol::TemperatureMsg createTemperatureMsg();
@@ -129,6 +135,8 @@ private:
     uint32_t last_battery_voltage_ms_ = 0;
     uint32_t last_battery_temperature_ms_ = 0;
     uint32_t last_battery_current_ms_ = 0;
+    uint32_t last_aux_current_ms_ = 0;
+    uint32_t last_fan_current_ms_ = 0;
     uint32_t last_heartbeat_ms_ = 0;
     uint32_t last_pack_status_ms_ = 0;
     uint32_t last_tx_ms_ = 0;

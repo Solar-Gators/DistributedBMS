@@ -75,6 +75,33 @@ CanFdFrame MessageEncoder::encodeBatteryCurrent(const BatteryCurrentMsg& msg) {
     return frame;
 }
 
+static CanFdFrame encodeFloatCurrent(uint16_t can_id, float current_A) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = can_id;
+    frame.fd_frame = false;
+    frame.dlc = 8;
+    uint32_t bits;
+    std::memcpy(&bits, &current_A, sizeof(float));
+    frame.data[0] = static_cast<uint8_t>((bits >> 24) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>((bits >> 16) & 0xFF);
+    frame.data[2] = static_cast<uint8_t>((bits >> 8) & 0xFF);
+    frame.data[3] = static_cast<uint8_t>(bits & 0xFF);
+    frame.data[4] = 0;
+    frame.data[5] = 0;
+    frame.data[6] = 0;
+    frame.data[7] = 0;
+    return frame;
+}
+
+CanFdFrame MessageEncoder::encodeAuxCurrent(const AuxCurrentMsg& msg) {
+    return encodeFloatCurrent(BMS_AUX_CURRENT, msg.current_A);
+}
+
+CanFdFrame MessageEncoder::encodeFanCurrent(const FanCurrentMsg& msg) {
+    return encodeFloatCurrent(BMS_FAN_CURRENT, msg.current_A);
+}
+
 CanFdFrame MessageEncoder::encodeHeartbeat(const HeartbeatMsg& msg) {
     CanFdFrame frame{};
     frame.extended = false;
@@ -230,6 +257,12 @@ CanId MessageDecoder::getMessageType(uint16_t can_id) {
     }
     if (can_id == BMS_BATTERY_CURRENT) {
         return BMS_BATTERY_CURRENT;
+    }
+    if (can_id == BMS_AUX_CURRENT) {
+        return BMS_AUX_CURRENT;
+    }
+    if (can_id == BMS_FAN_CURRENT) {
+        return BMS_FAN_CURRENT;
     }
     if (can_id >= BMS_HEARTBEAT && can_id <= BMS_CELL_VOLTAGES) {
         return static_cast<CanId>(can_id);

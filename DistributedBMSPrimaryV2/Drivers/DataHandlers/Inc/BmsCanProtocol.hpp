@@ -33,6 +33,8 @@ enum CanId : uint16_t {
     BMS_BATTERY_VOLTAGE = 0x041,
     BMS_BATTERY_TEMPERATURE = 0x042,
     BMS_BATTERY_CURRENT = 0x043,
+    BMS_AUX_CURRENT = 0x044,
+    BMS_FAN_CURRENT = 0x045,
 
     BMS_HEARTBEAT = 0x180,
     BMS_PACK_STATUS = 0x181,
@@ -87,6 +89,16 @@ struct BatteryTemperatureMsg {
 };
 
 struct BatteryCurrentMsg {
+    float current_A;
+    uint8_t reserved[4];
+};
+
+struct AuxCurrentMsg {
+    float current_A;
+    uint8_t reserved[4];
+};
+
+struct FanCurrentMsg {
     float current_A;
     uint8_t reserved[4];
 };
@@ -198,6 +210,8 @@ public:
     static CanFdFrame encodeBatteryVoltage(const BatteryVoltageMsg& msg);
     static CanFdFrame encodeBatteryTemperature(const BatteryTemperatureMsg& msg);
     static CanFdFrame encodeBatteryCurrent(const BatteryCurrentMsg& msg);
+    static CanFdFrame encodeAuxCurrent(const AuxCurrentMsg& msg);
+    static CanFdFrame encodeFanCurrent(const FanCurrentMsg& msg);
     static CanFdFrame encodeHeartbeat(const HeartbeatMsg& msg);
     static CanFdFrame encodePackStatus(const PackStatusMsg& msg);
     static CanFdFrame encodeTemperature(const TemperatureMsg& msg);
