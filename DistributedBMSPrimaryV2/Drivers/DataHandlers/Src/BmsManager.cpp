@@ -13,6 +13,7 @@
 #include "cmsis_os.h"
 #include "stm32g4xx_hal_tim.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -50,6 +51,34 @@ void setFanPwmCompareAll(TIM_HandleTypeDef* tim, uint32_t primary_channel, uint3
     }
 }
 
+/** 0% at on_C, linear ramp to 100% at max_C (fleet highest filtered temp). */
+uint8_t fanDutyPercentLinear(float temp_C, float on_C, float max_C)
+{
+    if (temp_C <= on_C || max_C <= on_C) {
+        return 0;
+    }
+    if (temp_C >= max_C) {
+        return 100;
+    }
+    const float frac = (temp_C - on_C) / (max_C - on_C);
+    const float duty = frac * 100.0f;
+    if (duty >= 99.5f) {
+        return 100;
+    }
+    return static_cast<uint8_t>(duty + 0.5f);
+}
+
+bool fleetSummaryHasPlausibleVoltage(const FleetSummaryData& summary)
+{
+    if (!kFilterImplausibleFleetReadings) {
+        return true;
+    }
+    return summary.highest_cell_mV >= kFleetMinPlausibleCell_mV &&
+           summary.highest_cell_mV <= kFleetMaxPlausibleCell_mV &&
+           summary.lowest_cell_mV >= kFleetMinPlausibleCell_mV &&
+           summary.lowest_cell_mV <= kFleetMaxPlausibleCell_mV;
+}
+
 }  // namespace
 
 // ========== Constructor ==========
@@ -78,6 +107,14 @@ BmsManager::BmsManager(BmsFleet* fleet,
     , aux_current_A_(0.0f)
     , fan_current_A_(0.0f)
     , pack_voltage_V_(0.0f)
+    , pack_adc_V_(0.0f)
+    , aux_shunt_V_(0.0f)
+    , aux_bus_V_(0.0f)
+    , fan_shunt_V_(0.0f)
+    , fan_bus_V_(0.0f)
+    , aux_read_ok_count_(0)
+    , aux_read_fail_count_(0)
+    , aux_last_hal_status_(0)
     , last_battery_current_update_ms_(0)
     , last_aux_current_update_ms_(0)
     , last_fan_current_update_ms_(0)
@@ -97,11 +134,24 @@ void BmsManager::setFleetAccessMutex(osMutexId_t mutex_id)
     fleet_access_mutex_ = mutex_id;
 }
 
+void BmsManager::setI2cMutex(osMutexId_t mutex_id)
+{
+    i2c_mutex_ = mutex_id;
+}
+
 void BmsManager::lockFleet_() const
 {
     if (fleet_access_mutex_ != nullptr) {
         (void)osMutexAcquire(fleet_access_mutex_, osWaitForever);
     }
+}
+
+bool BmsManager::tryLockFleet_(uint32_t timeout_ticks) const
+{
+    if (fleet_access_mutex_ == nullptr) {
+        return true;
+    }
+    return osMutexAcquire(fleet_access_mutex_, timeout_ticks) == osOK;
 }
 
 void BmsManager::unlockFleet_() const
@@ -111,11 +161,25 @@ void BmsManager::unlockFleet_() const
     }
 }
 
+void BmsManager::lockI2c_() const
+{
+    if (i2c_mutex_ != nullptr) {
+        (void)osMutexAcquire(i2c_mutex_, osWaitForever);
+    }
+}
+
+void BmsManager::unlockI2c_() const
+{
+    if (i2c_mutex_ != nullptr) {
+        (void)osMutexRelease(i2c_mutex_);
+    }
+}
+
 // ========== Initialization ==========
 void BmsManager::init()
 {
     state_ = BmsState::INIT;
-    state_entry_time_ms_ = HAL_GetTick();
+    state_entry_time_ms_ = 0;
     active_faults_ = 0;
     contactors_closed_ = false;
     fan_speed_percent_ = 0;
@@ -125,13 +189,23 @@ void BmsManager::init()
     if (fan_pwm_tim_ != nullptr) {
         startFanPwmOutputs(fan_pwm_tim_, fan_pwm_channel_);
         fan_pwm_initialized_ = true;
-        setFanPwmDuty(50);
     }
+
+    /* Force first sensor sample on the next update() without waiting a full period. */
+    const uint32_t ina_period = config_.ina226_read_period_ms;
+    const uint32_t ads_period = config_.ads1115_read_period_ms;
+    last_aux_current_update_ms_ = UINT32_MAX - ina_period + 1u;
+    last_fan_current_update_ms_ = UINT32_MAX - ina_period + 1u;
+    last_battery_current_update_ms_ = UINT32_MAX - ads_period + 1u;
 }
 
 // ========== Main Update Function ==========
 void BmsManager::update(uint32_t now_ms)
 {
+    if (state_ == BmsState::INIT && state_entry_time_ms_ == 0) {
+        state_entry_time_ms_ = now_ms;
+    }
+
     // Update current measurements
     updateCurrentMeasurements(now_ms);
 
@@ -143,7 +217,21 @@ void BmsManager::update(uint32_t now_ms)
 
     // Update hardware outputs
     updateContactors(now_ms);
-    //updateFans(now_ms);
+    updateFans(now_ms);
+
+    /* SoC: EKF @ ~10 Hz using pack V + pack I (discharge > 0). */
+    if (pack_voltage_V_ > 1.0f) {
+        if (!soc_initialized_) {
+            soc_.initFromPackVoltage(pack_voltage_V_);
+            soc_initialized_ = true;
+            last_soc_update_ms_ = now_ms;
+        } else if ((now_ms - last_soc_update_ms_) >= 100u) {
+            const float dt_s = static_cast<float>(now_ms - last_soc_update_ms_) * 0.001f;
+            const float temp_C = getFleetSummary().highest_temp_C;
+            soc_.update(pack_voltage_V_, battery_current_A_, dt_s, now_ms, temp_C);
+            last_soc_update_ms_ = now_ms;
+        }
+    }
 }
 
 // ========== Data Access ==========
@@ -325,8 +413,7 @@ uint8_t BmsManager::getDaughterBoardStatusBitmap(uint32_t now_ms) const
 
 float BmsManager::getStateOfCharge() const
 {
-    // TODO: Implement SOC calculation if needed
-    return 0.0f;
+    return soc_.socPercent();
 }
 
 // ========== Hardware Control ==========
@@ -369,14 +456,42 @@ const BmsManager::Config& BmsManager::getConfig() const
 // ========== Private: Update Methods ==========
 void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
 {
+    lockI2c_();
+
     // Rate-limit sensor reads to keep loop cadence deterministic.
     if (battery_current_adc_ != nullptr &&
         (now_ms - last_battery_current_update_ms_) >= config_.ads1115_read_period_ms) {
-        float adc_voltage_V = 0.0f;
-        const HAL_StatusTypeDef st =
-            battery_current_adc_->readSingleEnded(config_.current_adc_channel, adc_voltage_V);
-        if (st == HAL_OK) {
-            battery_current_A_ = convertAdcToCurrent(adc_voltage_V);
+        float v_low = 0.0f;
+        float v_high = 0.0f;
+        const HAL_StatusTypeDef st_low =
+            battery_current_adc_->readSingleEnded(config_.current_adc_channel_low, v_low);
+        const HAL_StatusTypeDef st_high =
+            battery_current_adc_->readSingleEnded(config_.current_adc_channel_high, v_high);
+
+        if (st_low == HAL_OK) {
+            pack_adc_low_V_ = v_low;
+        }
+        if (st_high == HAL_OK) {
+            pack_adc_high_V_ = v_high;
+        }
+
+        if (st_high == HAL_OK) {
+            const float i_high =
+                convertAdcToCurrent(v_high, config_.current_sensitivity_high_V_per_A);
+            const float abs_high = (i_high < 0.0f) ? -i_high : i_high;
+
+            if (st_low == HAL_OK && abs_high < config_.current_range_crossover_A) {
+                battery_current_A_ =
+                    convertAdcToCurrent(v_low, config_.current_sensitivity_low_V_per_A);
+                pack_adc_V_ = v_low;
+            } else {
+                battery_current_A_ = i_high;
+                pack_adc_V_ = v_high;
+            }
+        } else if (st_low == HAL_OK) {
+            battery_current_A_ =
+                convertAdcToCurrent(v_low, config_.current_sensitivity_low_V_per_A);
+            pack_adc_V_ = v_low;
         }
         last_battery_current_update_ms_ = now_ms;
     }
@@ -385,8 +500,14 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
         (now_ms - last_aux_current_update_ms_) >= config_.ina226_read_period_ms) {
         INA226::Measurement m;
         const HAL_StatusTypeDef st = aux_current_monitor_->readMeasurement(m);
+        aux_last_hal_status_ = static_cast<uint32_t>(st);
         if (st == HAL_OK) {
+            aux_shunt_V_ = m.shunt_V;
+            aux_bus_V_ = m.bus_V;
             aux_current_A_ = m.current_A - config_.aux_current_offset_A;
+            ++aux_read_ok_count_;
+        } else {
+            ++aux_read_fail_count_;
         }
         last_aux_current_update_ms_ = now_ms;
     }
@@ -395,10 +516,14 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
         (now_ms - last_fan_current_update_ms_) >= config_.ina226_read_period_ms) {
         INA226::Measurement m;
         if (fan_current_monitor_->readMeasurement(m) == HAL_OK) {
+            fan_shunt_V_ = m.shunt_V;
+            fan_bus_V_ = m.bus_V;
             fan_current_A_ = m.current_A;
         }
         last_fan_current_update_ms_ = now_ms;
     }
+
+    unlockI2c_();
 
     // Update pack voltage from fleet data
     if (fleet_ != nullptr) {
@@ -419,7 +544,9 @@ void BmsManager::updateFaults(uint32_t now_ms)
 
     uint16_t new_faults = 0;
 
-    lockFleet_();
+    if (!tryLockFleet_(1u)) {
+        return;
+    }
     const bool fleet_ok = (fleet_ != nullptr) && fleet_->has_data(now_ms);
 
     // Voltage / thermal / imbalance faults require fresh daughter telemetry
@@ -441,7 +568,7 @@ void BmsManager::updateFaults(uint32_t now_ms)
     if (checkBatteryOvercurrent()) {
         new_faults |= static_cast<uint16_t>(FaultType::BATTERY_OVERCURRENT);
     }
-    if (checkAuxOvercurrent()) {
+    if (config_.enable_aux_overcurrent_fault && checkAuxOvercurrent()) {
         new_faults |= static_cast<uint16_t>(FaultType::AUX_OVERCURRENT);
     }
     if (checkDataStale(now_ms)) {
@@ -471,22 +598,16 @@ void BmsManager::updateStateMachine(uint32_t now_ms)
             break;
 
         case BmsState::IDLE:
-            // Check for contactor close request
-            if (contactor_close_request_ && canCloseContactors()) {
+            /* Auto-close only when faults are clear AND live daughter data exists.
+             * Stay IDLE (contactors open) until fleet is ready — avoids boot chatter. */
+            if (canCloseContactors(now_ms)) {
                 next_state = BmsState::OPERATIONAL;
-            }
-            // Check for faults
-            if (active_faults_ != 0) {
+            } else if (active_faults_ != 0) {
                 next_state = BmsState::FAULT;
             }
             break;
 
         case BmsState::OPERATIONAL:
-            // Check for contactor open request
-            if (contactor_open_request_) {
-                next_state = BmsState::IDLE;
-            }
-            // Check for faults
             if (active_faults_ != 0) {
                 next_state = BmsState::FAULT;
             }
@@ -547,8 +668,8 @@ void BmsManager::updateContactors(uint32_t now_ms)
         return;  // Debug mode bypasses all normal logic
     }
 
-    // Default: contactors should be open unless in OPERATIONAL state
-    bool target_closed = (state_ == BmsState::OPERATIONAL);
+    // Default: contactors closed only in OPERATIONAL with close permitted
+    bool target_closed = (state_ == BmsState::OPERATIONAL) && canCloseContactors(now_ms);
 
     // Calculate time since contactors were closed (for grace period)
     uint32_t time_since_close = contactors_closed_ ? (now_ms - contactor_close_time_ms_) : UINT32_MAX;
@@ -609,33 +730,30 @@ void BmsManager::updateContactors(uint32_t now_ms)
 
 void BmsManager::updateFans(uint32_t now_ms)
 {
-    (void)now_ms;  // Unused for now
+    (void)now_ms;
 
     if (fleet_ == nullptr || !fan_pwm_initialized_ || fan_pwm_tim_ == nullptr) {
         return;
     }
 
+    lockFleet_();
     const auto& summary = fleet_->summary();
-    float highest_temp = summary.highest_temp_C;
+    const float highest_temp = summary.highest_temp_C;
+    const bool fleet_fresh = summary.is_online(now_ms, config_.data_stale_timeout_ms);
+    unlockFleet_();
 
-    // Calculate fan speed based on temperature
-    uint8_t new_speed = 0;
-    if (highest_temp > FAN_ON) {
-        if (highest_temp >= FAN_MAX) {
-            new_speed = 100;  // Max speed
-        } else {
-            // Linear interpolation between fan_on_temp and fan_max_temp
-            float temp_range = FAN_MAX - FAN_ON;
-            float temp_above_min = highest_temp - FAN_ON;
-            new_speed = static_cast<uint8_t>((temp_above_min / temp_range) * 100.0f);
-            if (new_speed > 100) new_speed = 100;
+    if (!fleet_fresh) {
+        if (fan_speed_percent_ != 0) {
+            setFanPwmDuty(0);
         }
+        return;
     }
 
-    // Update fan speed if changed
+    const uint8_t new_speed = fanDutyPercentLinear(
+        highest_temp, config_.fan_on_temp_C, config_.fan_max_temp_C);
+
     if (new_speed != fan_speed_percent_) {
         setFanPwmDuty(new_speed);
-        fan_speed_percent_ = new_speed;
     }
 }
 
@@ -651,8 +769,7 @@ void BmsManager::enterState(BmsState new_state, uint32_t now_ms)
             break;
 
         case BmsState::IDLE:
-            // Ensure contactors are open
-            contactor_open_request_ = true;
+            contactor_open_request_ = false;
             contactor_close_request_ = false;
             break;
 
@@ -692,6 +809,9 @@ void BmsManager::processState(BmsState state, uint32_t now_ms)
 bool BmsManager::checkOvervoltage()
 {
     const auto& summary = fleet_->summary();
+    if (!fleetSummaryHasPlausibleVoltage(summary)) {
+        return false;
+    }
     uint16_t threshold = config_.cell_overvoltage_mV;
     uint16_t clear_threshold = threshold - config_.voltage_hysteresis_mV;
 
@@ -707,6 +827,9 @@ bool BmsManager::checkOvervoltage()
 bool BmsManager::checkUndervoltage()
 {
     const auto& summary = fleet_->summary();
+    if (!fleetSummaryHasPlausibleVoltage(summary)) {
+        return false;
+    }
     uint16_t threshold = config_.cell_undervoltage_mV;
     uint16_t clear_threshold = threshold + config_.voltage_hysteresis_mV;
 
@@ -722,6 +845,9 @@ bool BmsManager::checkUndervoltage()
 bool BmsManager::checkCellImbalance()
 {
     const auto& summary = fleet_->summary();
+    if (!fleetSummaryHasPlausibleVoltage(summary)) {
+        return false;
+    }
     uint16_t imbalance = summary.highest_cell_mV - summary.lowest_cell_mV;
     uint16_t threshold = config_.cell_imbalance_mV;
 
@@ -731,6 +857,12 @@ bool BmsManager::checkCellImbalance()
 bool BmsManager::checkOvertemperature()
 {
     const auto& summary = fleet_->summary();
+    if (kFilterImplausibleFleetReadings &&
+        (!std::isfinite(summary.highest_temp_C) ||
+         summary.highest_temp_C < kFleetMinPlausibleTemp_C ||
+         summary.highest_temp_C > kFleetMaxPlausibleTemp_C)) {
+        return false;
+    }
     float threshold = config_.overtemp_C;
     float clear_threshold = threshold - config_.temp_hysteresis_C;
 
@@ -746,6 +878,15 @@ bool BmsManager::checkOvertemperature()
 bool BmsManager::checkUndertemperature()
 {
     const auto& summary = fleet_->summary();
+    if (kFilterImplausibleFleetReadings &&
+        (!std::isfinite(summary.highest_temp_C) ||
+         summary.highest_temp_C < kFleetMinPlausibleTemp_C ||
+         summary.highest_temp_C > kFleetMaxPlausibleTemp_C)) {
+        return false;
+    }
+    if (!std::isfinite(summary.highest_temp_C) || summary.highest_temp_C < -50.0f) {
+        return false;
+    }
     float threshold = config_.undertemp_C;
     float clear_threshold = threshold + config_.temp_hysteresis_C;
 
@@ -799,8 +940,16 @@ bool BmsManager::checkDataStale(uint32_t now_ms)
 // ========== Private: Current Measurement ==========
 float BmsManager::convertAdcToCurrent(float adc_voltage_V)
 {
-    // Pack current: I = (V_adc - V_zero) / (R_sense * gain). V_zero = ADS AIN0 at 0 A.
-    const float denom = config_.current_shunt_resistance_ohm * config_.current_gain;
+    return convertAdcToCurrent(adc_voltage_V, config_.current_sensitivity_high_V_per_A);
+}
+
+float BmsManager::convertAdcToCurrent(float adc_voltage_V, float sensitivity_V_per_A) const
+{
+    /* I_pack = (Vadc - V0) / (G * N_turns) */
+    const float turns = (config_.current_sensor_turns == 0)
+                            ? 1.0f
+                            : static_cast<float>(config_.current_sensor_turns);
+    const float denom = sensitivity_V_per_A * turns;
     if (denom <= 0.0f) {
         return 0.0f;
     }
@@ -851,7 +1000,8 @@ void BmsManager::setFanPwmDuty(uint8_t percent)
     }
 
     const uint32_t arr = __HAL_TIM_GET_AUTORELOAD(fan_pwm_tim_);
-    const uint32_t pulse = (arr * static_cast<uint32_t>(percent)) / 100U;
+    const uint32_t pulse =
+        ((arr + 1U) * static_cast<uint32_t>(percent)) / 100U;
     setFanPwmCompareAll(fan_pwm_tim_, fan_pwm_channel_, pulse);
     fan_speed_percent_ = percent;
 }
@@ -874,26 +1024,16 @@ void BmsManager::setFanPwmTimer(TIM_HandleTypeDef* tim, uint32_t channel)
 }
 
 // ========== Private: Safety Checks ==========
-bool BmsManager::canCloseContactors() const
+bool BmsManager::canCloseContactors(uint32_t now_ms) const
 {
-    // Check all safety conditions before closing contactors
     if (active_faults_ != 0) {
-        return false;  // No faults allowed
+        return false;
     }
-
     if (fleet_ == nullptr) {
         return false;
     }
-
-    uint32_t now_ms = HAL_GetTick();
-    lockFleet_();
-    const bool ok = fleet_->has_data(now_ms);
-    unlockFleet_();
-    if (!ok) {
-        return false;
-    }
-
-    return true;
+    /* Require at least one fresh daughter frame before energizing the bus. */
+    return fleet_->has_data(now_ms);
 }
 
 void BmsManager::emergencyShutdown()

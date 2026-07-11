@@ -7,8 +7,34 @@
 
 #include "cmsis_os.h"
 
+namespace {
+
+bool isPlausibleCell_mV(uint16_t mv)
+{
+    return mv >= kFleetMinPlausibleCell_mV && mv <= kFleetMaxPlausibleCell_mV;
+}
+
+bool isPlausibleAvgVoltage(float v)
+{
+    return v >= static_cast<float>(kFleetMinPlausibleCell_mV) &&
+           v <= static_cast<float>(kFleetMaxPlausibleCell_mV);
+}
+
+bool isPlausibleTemp_C(float c)
+{
+    return std::isfinite(c) && c >= kFleetMinPlausibleTemp_C && c <= kFleetMaxPlausibleTemp_C;
+}
+
+bool useFleetPlausibilityFilter()
+{
+    return kFilterImplausibleFleetReadings;
+}
+
+}  // namespace
+
 void ModuleData::clear() {
     highTemp = -1000.0f;
+    lowTemp = 1000.0f;
     avgTemp = 0.0f;
     highTempID = 0;
 
@@ -78,13 +104,19 @@ int BmsFleet::daughterSlotForCanId_(const CanBus::Frame& msg) const {
         }
     }
 
-    if (!any_registered) {
-        const int legacy = static_cast<int>(sid) - 0x100;
-        if (legacy >= 0 && legacy < static_cast<int>(MAX_MODULES)) {
-            return legacy;
-        }
+    (void)any_registered;
+    /* DeviceConfig: CAN_ID = 0x100 + DEVICE_NUMBER (slots 0..7). */
+    if (sid >= 0x100u && sid < (0x100u + MAX_MODULES)) {
+        return static_cast<int>(sid - 0x100u);
     }
     return -1;
+}
+
+int BmsFleet::slotForStdCanId(uint16_t can_id) const {
+    CanBus::Frame msg{};
+    msg.id = static_cast<uint32_t>(can_id) & 0x7FFu;
+    msg.extended = false;
+    return daughterSlotForCanId_(msg);
 }
 
 void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
@@ -99,6 +131,10 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
 
     ModuleData& M = modules_[static_cast<size_t>(slot)];
     const uint8_t* data = msg.data.data();
+
+    /* Any data frame on a known daughter ID counts as online (CAN heartbeat). */
+    M.last_ms = now_ms;
+    M.online = true;
 
     bool decoded = false;
     switch (CanFrames::getType(data)) {
@@ -133,9 +169,11 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
     }
     case CanFrames::HIGH_TEMP: {
         float high_temp = 0.0f;
+        float low_temp = 1000.0f;
         uint8_t high_index = 0;
-        if (CanFrames::decodeHighTemp(data, high_temp, high_index)) {
+        if (CanFrames::decodeHighTemp(data, high_temp, high_index, low_temp)) {
             M.highTemp = high_temp;
+            M.lowTemp = low_temp;
             M.highTempID = high_index;
             decoded = true;
         }
@@ -149,9 +187,33 @@ void BmsFleet::handleMessage(const CanBus::Frame& msg, uint32_t now_ms) {
     }
 
     if (decoded) {
-        M.last_ms = now_ms;
-        M.online = true;
+        ++decode_ok_count_;
+    } else {
+        ++decode_fail_count_;
     }
+}
+
+void BmsFleet::applySymmetricTempMirrors_() {
+    if (!kMirrorDb4TempsFromDb1) {
+        return;
+    }
+
+    const size_t src = static_cast<size_t>(kSymmetricTempSourceSlot);
+    const size_t dst = static_cast<size_t>(kSymmetricTempDestSlot);
+    if (src >= modules_.size() || dst >= modules_.size()) {
+        return;
+    }
+
+    const ModuleData& from = modules_[src];
+    ModuleData& to = modules_[dst];
+    if (!from.online || !to.online) {
+        return;
+    }
+
+    to.avgTemp = from.avgTemp;
+    to.highTemp = from.highTemp;
+    to.lowTemp = from.lowTemp;
+    to.highTempID = from.highTempID;
 }
 
 void BmsFleet::processModules() {
@@ -165,6 +227,7 @@ void BmsFleet::processModules() {
 
     const uint32_t now_ms = osKernelGetTickCount();
     online(now_ms);
+    applySymmetricTempMirrors_();
 
     for (size_t i = 0; i < modules_.size(); i++) {
         auto& m = modules_[i];
@@ -174,19 +237,27 @@ void BmsFleet::processModules() {
             continue;
         }
 
-        fleet.totalVoltage += static_cast<uint32_t>(m.avgVoltage * static_cast<float>(m.num_cells));
+        const bool filter = useFleetPlausibilityFilter();
+        const bool avg_ok = !filter || isPlausibleAvgVoltage(m.avgVoltage);
+        const bool high_ok = !filter || isPlausibleCell_mV(m.highVoltage);
+        const bool low_ok = !filter || isPlausibleCell_mV(m.lowVoltage);
+        const bool temp_ok = !filter || isPlausibleTemp_C(m.highTemp);
 
-        if (m.highVoltage > fleet.highestVoltage) {
+        if (avg_ok) {
+            fleet.totalVoltage += static_cast<uint32_t>(m.avgVoltage * static_cast<float>(m.num_cells));
+        }
+
+        if (high_ok && m.highVoltage > fleet.highestVoltage) {
             fleet.highestVoltage = m.highVoltage;
             fleet.highVoltageID = static_cast<uint8_t>(cell_offset + m.highVoltageID);
         }
 
-        if (m.lowVoltage < fleet.lowestVoltage) {
+        if (low_ok && m.lowVoltage < fleet.lowestVoltage) {
             fleet.lowestVoltage = m.lowVoltage;
             fleet.lowVoltageID = static_cast<uint8_t>(cell_offset + m.lowVoltageID);
         }
 
-        if (m.highTemp > fleet.highestTemp) {
+        if (temp_ok && m.highTemp > fleet.highestTemp) {
             fleet.highestTemp = m.highTemp;
             fleet.highTempID = static_cast<uint8_t>(cell_offset + m.highTempID);
         }
@@ -219,7 +290,8 @@ void BmsFleet::refreshSummaryCache(uint32_t now_ms) {
     summary_cache_.total_voltage_mV =
         static_cast<uint16_t>(std::min<uint32_t>(f.totalVoltage, 0xFFFFu));
     summary_cache_.highest_cell_mV = f.highestVoltage;
-    summary_cache_.lowest_cell_mV = f.lowestVoltage;
+    summary_cache_.lowest_cell_mV =
+        (f.lowestVoltage == 0xFFFFu) ? f.highestVoltage : f.lowestVoltage;
     summary_cache_.highest_temp_C = f.highestTemp;
     summary_cache_.highest_cell_idx = f.highVoltageID;
     summary_cache_.lowest_cell_idx = f.lowVoltageID;
@@ -239,6 +311,7 @@ void BmsFleet::refreshSummaryCache(uint32_t now_ms) {
         dst.valid = src.online;
         dst.module_idx = static_cast<uint8_t>(i);
         dst.high_temp_C = src.highTemp;
+        dst.low_temp_C = src.lowTemp;
         dst.high_temp_cell = src.highTempID;
         dst.high_mV = src.highVoltage;
         dst.low_mV = src.lowVoltage;

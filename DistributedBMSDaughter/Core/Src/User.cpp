@@ -81,6 +81,47 @@ static constexpr std::array<uint16_t, CELLS> kStandinNtcCounts = {{
 
 bool debugMode;
 
+/* Debugger / Live Expressions — add any symbol below in STM32CubeIDE Live Expressions. */
+volatile uint16_t g_dbg_cell_mV[6]{};
+volatile uint16_t g_dbg_ntc_adc[6]{};
+volatile float g_dbg_ntc_C[6]{};
+volatile uint16_t g_dbg_avg_cell_mV = 0;
+volatile uint16_t g_dbg_high_cell_mV = 0;
+volatile uint16_t g_dbg_low_cell_mV = 0;
+volatile float g_dbg_avg_C = 0.0f;
+volatile float g_dbg_high_C = 0.0f;
+volatile float g_dbg_low_C = 0.0f;
+volatile uint8_t g_dbg_high_cell_idx = 0;
+volatile uint8_t g_dbg_high_temp_idx = 0;
+volatile uint8_t g_dbg_low_temp_idx = 0;
+volatile uint16_t g_dbg_can_id = 0;
+volatile uint32_t g_dbg_fault_mask = 0;
+volatile uint32_t g_dbg_cycle_count = 0;
+volatile uint32_t g_dbg_can_tx_ok = 0;
+volatile uint32_t g_dbg_can_esr = 0;
+volatile uint8_t g_dbg_can_state = 0;
+
+static void refreshDebugMonitor(const BMS::Results& r)
+{
+    for (uint8_t i = 0; i < CELLS; ++i)
+    {
+        g_dbg_cell_mV[i] = cellVoltages[i];
+        g_dbg_ntc_adc[i] = cellTempADC[i];
+        g_dbg_ntc_C[i] = r.ntc_C[i];
+    }
+    g_dbg_avg_cell_mV = r.avg_cell_mV;
+    g_dbg_high_cell_mV = r.high_cell_mV;
+    g_dbg_low_cell_mV = r.low_cell_mV;
+    g_dbg_avg_C = r.avg_C;
+    g_dbg_high_C = r.high_C;
+    g_dbg_low_C = r.low_C;
+    g_dbg_high_cell_idx = r.high_cell_phys_idx;
+    g_dbg_high_temp_idx = r.high_temp_idx;
+    g_dbg_low_temp_idx = r.low_temp_idx;
+    g_dbg_fault_mask = faultManager.getFaultMask();
+    ++g_dbg_cycle_count;
+}
+
 #if !USE_STANDIN_SENSORS
 // Real BQ76907 direct-command reads (used when USE_STANDIN_SENSORS is 0).
 // Logical pack cell order (0..5) maps to BQ cell channels 1..5 and 7 (skip 6).
@@ -128,6 +169,7 @@ void setup(){
     can1.start();
 
 	debugMode = true;
+    g_dbg_can_id = DeviceConfig::CAN_ID;
 
 }
 
@@ -200,12 +242,23 @@ void StartDefaultTask(void *argument)
 		}
         cellTempADC[5] = adc_buf[6];
 
-		if(dataValidator.validateADCReadings(cellTempADC) == 0){
-			osMutexAcquire(bmsMutex_id, osWaitForever);
-			bms.set_ntc_counts(cellTempADC);
-			osMutexRelease(bmsMutex_id);
+		/* Always push latest counts; BMS treats 0/saturated as NaN per channel. */
+		bool any_valid_adc = false;
+		const auto& adc_cfg = dataValidator.getConfig();
+		for (uint16_t count : cellTempADC) {
+		    if (count >= adc_cfg.min_adc_value && count <= adc_cfg.max_adc_value) {
+		        any_valid_adc = true;
+		        break;
+		    }
+		}
+
+		osMutexAcquire(bmsMutex_id, osWaitForever);
+		bms.set_ntc_counts(cellTempADC);
+		osMutexRelease(bmsMutex_id);
+
+		if (any_valid_adc) {
 			faultManager.clearFault(FaultManager::FaultType::ADC_RESULT_ERROR);
-		}else{
+		} else {
 			faultManager.setFault(FaultManager::FaultType::ADC_RESULT_ERROR);
 		}
 #endif
@@ -227,14 +280,15 @@ void StartVoltageTask(void *argument)
         osMutexAcquire(bmsMutex_id, osWaitForever);
         bms.update();
         const auto& r = bms.results();
+        refreshDebugMonitor(r);
         osMutexRelease(bmsMutex_id);
 
         /* ---------------- CAN housekeeping ---------------- */
         can1.poll();   // Required for recovery / error handling
-        if (can1.busOffLatched()) {
+        if (can1.state() == CanBus::State::Healthy) {
+            faultManager.clearFault(FaultManager::FaultType::CAN_BUS_OFF);
+        } else {
             faultManager.setFault(FaultManager::FaultType::CAN_BUS_OFF);
-        }else{
-        	faultManager.clearFault(FaultManager::FaultType::CAN_BUS_OFF);
         }
 
 
@@ -270,6 +324,9 @@ void StartVoltageTask(void *argument)
 
         }
 
+        g_dbg_can_tx_ok = can1.txOk();
+        g_dbg_can_esr = hcan1.Instance->ESR;
+        g_dbg_can_state = static_cast<uint8_t>(can1.state());
 
         /* ---------------- Status LED ---------------- */
         if (faultManager.getFaultMask() == 0) {

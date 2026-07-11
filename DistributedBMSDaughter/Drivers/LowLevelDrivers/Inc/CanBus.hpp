@@ -108,6 +108,7 @@ private:
     uint32_t tx_err_ = 0;
     uint32_t tx_ok_at_recovery_ = 0;
     uint32_t recovery_start_tick_ = 0;
+    uint32_t last_recovery_attempt_tick_ = 0;
 
     ErrorCallback error_cb_ = nullptr;
 };

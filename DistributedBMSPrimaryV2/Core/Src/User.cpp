@@ -1,6 +1,6 @@
 /*
  * FDCAN2: daughter CAN (IDs 0x100..). FDCAN3: vehicle CAN (0x040.., 0x1A0 commands).
- * I2C2: ADS1115 (pack current), INA226 @0x40 (aux), INA226 @0x44 (fan).
+ * I2C2: ADS1115 (DHAB S/134 pack current on AIN0=low / AIN1=high), INA226 @0x40 (aux), INA226 @0x44 (fan).
  * SPI1 + NCS_A: ADS131M02 (24-bit ADC) bring-up.
  * IN0/IN1 + BTS71040 (SPI1, NCS_L): main contactor drive on PrimaryV2.
  * RX uses HAL_FDCAN_RxFifo0Callback in CanBus.cpp (multi-instance dispatch).
@@ -59,15 +59,94 @@ static osMutexId_t s_spi1_mutex{nullptr};
 
 static constexpr uint8_t kBtsOutBothMask = 0x03u;  /* OUT0 + OUT1 */
 
-/** Vehicle integration without daughter boards: actuators + CAN only. */
-static constexpr bool kVehicleIntegrationTest = true;
-static constexpr bool kManualContactorStagger = true;
+/** Bench override for contactor/fan/fault bypass. Keep false for final behavior. */
+static constexpr bool kQuickBenchTest = false;
+/** false = production: fleet-driven faults, vehicle CAN close, temp-based fans. */
+static constexpr bool kVehicleIntegrationTest = false;
+/** false = BmsManager drives IN0/IN1 + stagger; true = boot auto-close in User.cpp. */
+static constexpr bool kManualContactorStagger = false;
+/**
+ * Bench without vehicle CAN: auto-request contactor close once fleet is healthy.
+ * Set false before vehicle integration (close comes from 0x1A0 on FDCAN3).
+ */
+static constexpr bool kBenchAutoCloseContactors = false;
 static constexpr uint32_t kContactorBootDelayMs = 1000;
 static constexpr uint32_t kContactorStaggerDelayMs = 500;
-static constexpr uint8_t kIntegrationTestFanDutyPercent = 50;
+static constexpr uint8_t kIntegrationTestFanDutyPercent = 25;
 
 static osMutexId_t s_fleet_mutex{nullptr};
 static osMutexId_t s_bms_mutex{nullptr};
+static osMutexId_t s_i2c2_mutex{nullptr};
+
+volatile uint32_t g_dbg_can_rx_frames = 0;
+volatile uint32_t g_dbg_fleet_cycle = 0;
+volatile uint8_t g_dbg_daughter_online[MAX_MODULES]{};
+volatile uint16_t g_dbg_daughter_avg_mV[MAX_MODULES]{};
+volatile float g_dbg_daughter_avg_C[MAX_MODULES]{};
+volatile float g_dbg_daughter_low_C[MAX_MODULES]{};
+volatile uint16_t g_dbg_daughter_low_mV[MAX_MODULES]{};
+volatile uint16_t g_dbg_daughter_high_mV[MAX_MODULES]{};
+volatile uint16_t g_dbg_fleet_highest_mV = 0;
+volatile uint16_t g_dbg_fleet_lowest_mV = 0;
+volatile uint16_t g_dbg_fleet_imbalance_mV = 0;
+volatile uint8_t g_dbg_fleet_highest_cell_idx = 0xFF;
+volatile uint8_t g_dbg_fleet_lowest_cell_idx = 0xFF;
+volatile uint32_t g_dbg_daughter_age_ms[MAX_MODULES]{};
+volatile uint32_t g_dbg_daughter_last_update_ms[MAX_MODULES]{};
+volatile uint16_t g_dbg_last_rx_id = 0;
+volatile uint8_t g_dbg_last_rx_type = 0;
+volatile int32_t g_dbg_last_rx_slot = -1;
+volatile uint32_t g_dbg_rx_unknown_id = 0;
+volatile uint32_t g_dbg_rx_decode_ok = 0;
+volatile uint32_t g_dbg_rx_decode_fail = 0;
+volatile uint32_t g_dbg_fdcan2_fifo_level = 0;
+volatile uint32_t g_dbg_fdcan2_psr = 0;
+volatile uint16_t g_dbg_active_faults = 0;
+volatile uint8_t g_dbg_bms_state = 0;
+volatile float g_dbg_pack_current_A = 0.0f;
+volatile float g_dbg_pack_current_adc_V = 0.0f;
+volatile float g_dbg_pack_current_adc_low_V = 0.0f;
+volatile float g_dbg_pack_current_adc_high_V = 0.0f;
+volatile float g_dbg_soc_percent = 0.0f;
+volatile float g_dbg_aux_current_A = 0.0f;
+volatile float g_dbg_fan_current_A = 0.0f;
+volatile float g_dbg_aux_shunt_mV = 0.0f;
+volatile float g_dbg_aux_bus_V = 0.0f;
+volatile float g_dbg_fan_shunt_mV = 0.0f;
+volatile float g_dbg_fan_bus_V = 0.0f;
+volatile uint8_t g_dbg_ina_aux_init_ok = 0;
+volatile uint16_t g_dbg_ina_aux_manuf_id = 0;
+volatile uint32_t g_dbg_ina_aux_read_ok = 0;
+volatile uint32_t g_dbg_ina_aux_read_fail = 0;
+volatile uint32_t g_dbg_ina_aux_last_hal = 0;
+
+static void refreshDaughterDebugMonitor()
+{
+    const auto& summary = fleet.summary();
+    g_dbg_fleet_highest_mV = summary.highest_cell_mV;
+    g_dbg_fleet_lowest_mV = summary.lowest_cell_mV;
+    g_dbg_fleet_highest_cell_idx = summary.highest_cell_idx;
+    g_dbg_fleet_lowest_cell_idx = summary.lowest_cell_idx;
+    if (summary.highest_cell_mV >= summary.lowest_cell_mV) {
+        g_dbg_fleet_imbalance_mV = summary.highest_cell_mV - summary.lowest_cell_mV;
+    } else {
+        g_dbg_fleet_imbalance_mV = 0;
+    }
+
+    for (uint8_t i = 0; i < MAX_MODULES; ++i)
+    {
+        const auto& m = fleet.moduleSnapshot(i);
+        g_dbg_daughter_online[i] = m.valid ? 1u : 0u;
+        g_dbg_daughter_avg_mV[i] = m.avg_cell_mV;
+        g_dbg_daughter_avg_C[i] = m.avg_temp_C;
+        g_dbg_daughter_low_C[i] = m.low_temp_C;
+        g_dbg_daughter_low_mV[i] = m.low_mV;
+        g_dbg_daughter_high_mV[i] = m.high_mV;
+        g_dbg_daughter_age_ms[i] = m.age_ms;
+        g_dbg_daughter_last_update_ms[i] = m.last_update_ms;
+    }
+    ++g_dbg_fleet_cycle;
+}
 
 static bool s_ads131m02_ready = false;
 
@@ -182,8 +261,10 @@ static void ads131m02PollSample() {
 void UserInitRtosSync(void) {
     s_fleet_mutex = osMutexNew(nullptr);
     s_bms_mutex = osMutexNew(nullptr);
+    s_i2c2_mutex = osMutexNew(nullptr);
     s_spi1_mutex = osMutexNew(nullptr);
     bms_manager.setFleetAccessMutex(s_fleet_mutex);
+    bms_manager.setI2cMutex(s_i2c2_mutex);
 }
 
 void setup() {
@@ -192,50 +273,106 @@ void setup() {
     (void)vehicle_can.configureFilterAcceptAll();
     (void)vehicle_can.start();
 
-    fleet.registerDaughter(0x100, 0);
-    fleet.registerDaughter(0x101, 1);
-    fleet.registerDaughter(0x102, 2);
-
-    (void)adc.init();
-    /* U103 aux: R102 20 mΩ on +12V_BUCK → +12V_BUCK_A. U403 fan: R513 on +12V_P → FAN_Power. */
-    (void)ina_aux.init(0.02f, 100.0f);
-    (void)ina_fan.init(0.02f, 100.0f);
-
-    s_bts71040 = &bts71040;
-    bts71040HwInit();
-
-    if (!kManualContactorStagger) {
-        bms_manager.setContactorGpio(IN0_GPIO_Port, IN0_Pin);
-        bms_manager.setSecondContactorGpio(IN1_GPIO_Port, IN1_Pin);
+    for (uint8_t i = 0; i < MAX_MODULES; ++i) {
+        (void)fleet.registerDaughter(static_cast<uint16_t>(0x100u + i), i);
     }
 
-    bms_manager.setFanPwmTimer(&htim8, TIM_CHANNEL_2);
+    (void)adc.init();
 
     BmsManager::Config cfg;
-    cfg.cell_overvoltage_mV = 4220;
+    cfg.cell_overvoltage_mV = 4200;
     cfg.cell_undervoltage_mV = 2500;
-    cfg.overtemp_C = 100.0f;
-    cfg.overcurrent_A = 100.0f;
+    cfg.cell_imbalance_mV = 410;
+    cfg.overtemp_C = 60.0f;
+    cfg.overcurrent_A = 40.0f; /* FSGP charge OC (5 A×8P); abs trip */
     cfg.aux_overcurrent_A = 50.0f;
-    cfg.current_shunt_resistance_ohm = 0.001f;
-    cfg.current_gain = 50.0f;  /* 50 mV/A at ADS1115 AIN0 → 20 A/V */
-    cfg.current_offset_V = 1.68f;
-    cfg.aux_current_offset_A = 0.007f;
+    cfg.enable_aux_overcurrent_fault = false;
+    /* LEM DHAB S/134: AIN0=CH1 low (40 mV/A), AIN1=CH2 high (10 mV/A), 1 turn (race) */
+    cfg.current_adc_channel_low = 0;
+    cfg.current_adc_channel_high = 1;
+    cfg.current_sensitivity_low_V_per_A = 0.040f;
+    cfg.current_sensitivity_high_V_per_A = 0.010f;
+    cfg.current_offset_V = 2.5f;
+    cfg.current_sensor_turns = 15;
+    cfg.current_range_crossover_A = 2.5f;
+    cfg.current_adc_channel = 1;
+    cfg.current_shunt_resistance_ohm = 1.0f;
+    cfg.current_gain = 0.010f;
+    cfg.aux_current_offset_A = 0.0f;
     cfg.data_stale_timeout_ms = PrimaryV2Contract::DAUGHTER_STALE_TIMEOUT_MS;
     cfg.ads1115_read_period_ms = PrimaryV2Contract::ADS1115_READ_PERIOD_MS;
     cfg.ina226_read_period_ms = PrimaryV2Contract::INA226_READ_PERIOD_MS;
     bms_manager.setConfig(cfg);
 
-    /* No daughter telemetry during vehicle integration test. */
-    bms_manager.setDebugMode(true, false, true);
+    /* U103 aux: R102 shunt on +12V_BUCK → +12V_BUCK_A. U403 fan: R513 on +12V_P. */
+    const HAL_StatusTypeDef aux_init_st =
+        ina_aux.init(cfg.aux_shunt_resistance_ohm, cfg.aux_max_current_A);
+    const HAL_StatusTypeDef fan_init_st =
+        ina_fan.init(cfg.fan_shunt_resistance_ohm, cfg.fan_max_current_A);
+
+    uint16_t aux_manuf = 0;
+    uint16_t fan_manuf = 0;
+    const HAL_StatusTypeDef aux_probe_st = ina_aux.probe(aux_manuf);
+    const HAL_StatusTypeDef fan_probe_st = ina_fan.probe(fan_manuf);
+    g_dbg_ina_aux_init_ok =
+        (aux_init_st == HAL_OK && aux_probe_st == HAL_OK && aux_manuf == 0x5449u) ? 1u : 0u;
+    g_dbg_ina_aux_manuf_id = aux_manuf;
+
+    if (aux_probe_st == HAL_OK) {
+        INA226::Measurement m{};
+        if (ina_aux.readMeasurement(m) == HAL_OK) {
+            g_dbg_aux_shunt_mV = m.shunt_V * 1000.0f;
+            g_dbg_aux_bus_V = m.bus_V;
+            g_dbg_aux_current_A = m.current_A;
+        }
+    }
+    if (fan_probe_st == HAL_OK) {
+        INA226::Measurement m{};
+        if (ina_fan.readMeasurement(m) == HAL_OK) {
+            g_dbg_fan_shunt_mV = m.shunt_V * 1000.0f;
+            g_dbg_fan_bus_V = m.bus_V;
+            g_dbg_fan_current_A = m.current_A;
+        }
+    }
+    {
+        float v_low = 0.0f;
+        float v_high = 0.0f;
+        if (adc.readSingleEnded(cfg.current_adc_channel_low, v_low) == HAL_OK) {
+            g_dbg_pack_current_adc_low_V = v_low;
+        }
+        if (adc.readSingleEnded(cfg.current_adc_channel_high, v_high) == HAL_OK) {
+            g_dbg_pack_current_adc_high_V = v_high;
+            g_dbg_pack_current_adc_V = v_high;
+            const float turns = static_cast<float>(cfg.current_sensor_turns);
+            const float denom = cfg.current_sensitivity_high_V_per_A * turns;
+            if (denom > 0.0f) {
+                g_dbg_pack_current_A = (v_high - cfg.current_offset_V) / denom;
+            }
+        }
+    }
+    (void)fan_init_st;
+    (void)fan_probe_st;
+    (void)fan_manuf;
+
+    s_bts71040 = &bts71040;
+    bts71040HwInit();
+
+    bms_manager.setContactorGpio(IN0_GPIO_Port, IN0_Pin);
+    bms_manager.setSecondContactorGpio(IN1_GPIO_Port, IN1_Pin);
     if (kManualContactorStagger) {
         bms_manager.setExternalContactorControl(true);
     }
 
-    bms_manager.init();
+    bms_manager.setFanPwmTimer(&htim8, TIM_CHANNEL_2);
+
     if (kVehicleIntegrationTest) {
+        bms_manager.setDebugMode(true, false, true);
         bms_manager.setFanPwmDuty(kIntegrationTestFanDutyPercent);
+    } else {
+        bms_manager.setDebugMode(false);
     }
+
+    bms_manager.init();
 
     BmsCanInterface::Config vcan_cfg{};
     vcan_cfg.heartbeat_period_ms = 100;
@@ -254,9 +391,21 @@ void setup() {
 void StartDefaultTask(void* argument) {
     (void)argument;
     for (;;) {
+        g_dbg_fdcan2_fifo_level =
+            HAL_FDCAN_GetRxFifoFillLevel(&hfdcan2, FDCAN_RX_FIFO0);
+        g_dbg_fdcan2_psr = hfdcan2.Instance->PSR;
+
         CanBus::Frame rx{};
         (void)osMutexAcquire(s_fleet_mutex, osWaitForever);
         while (daughter_can.read(rx)) {
+            ++g_dbg_can_rx_frames;
+            g_dbg_last_rx_id = static_cast<uint16_t>(rx.id & 0x7FFu);
+            g_dbg_last_rx_type = (rx.len > 0u) ? rx.data[0] : 0xFFu;
+            const int slot = fleet.slotForStdCanId(g_dbg_last_rx_id);
+            g_dbg_last_rx_slot = slot;
+            if (slot < 0) {
+                ++g_dbg_rx_unknown_id;
+            }
             fleet.handleMessage(rx, osKernelGetTickCount());
             HAL_GPIO_TogglePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin);
         }
@@ -270,6 +419,9 @@ void StartFleetTask(void* argument) {
     for (;;) {
         (void)osMutexAcquire(s_fleet_mutex, osWaitForever);
         fleet.processModules();
+        refreshDaughterDebugMonitor();
+        g_dbg_rx_decode_ok = fleet.decodeOkCount();
+        g_dbg_rx_decode_fail = fleet.decodeFailCount();
         (void)osMutexRelease(s_fleet_mutex);
         osDelay(PrimaryV2Contract::FLEET_AGGREGATE_PERIOD_MS);
     }
@@ -281,7 +433,29 @@ void StartSafetyTask(void* argument) {
         const uint32_t now = osKernelGetTickCount();
         (void)osMutexAcquire(s_bms_mutex, osWaitForever);
         bms_manager.update(now);
+
+        if (kVehicleIntegrationTest) {
+            bms_manager.setFanPwmDuty(kIntegrationTestFanDutyPercent);
+        }
+
         (void)osMutexRelease(s_bms_mutex);
+
+        g_dbg_active_faults = bms_manager.getActiveFaults();
+        g_dbg_bms_state = static_cast<uint8_t>(bms_manager.getState());
+        g_dbg_pack_current_A = bms_manager.getBatteryCurrent_A();
+        g_dbg_pack_current_adc_V = bms_manager.getPackCurrentAdc_V();
+        g_dbg_pack_current_adc_low_V = bms_manager.getPackCurrentAdcLow_V();
+        g_dbg_pack_current_adc_high_V = bms_manager.getPackCurrentAdcHigh_V();
+        g_dbg_soc_percent = bms_manager.getStateOfCharge();
+        g_dbg_aux_current_A = bms_manager.getAuxCurrent_A();
+        g_dbg_fan_current_A = bms_manager.getFanCurrent_A();
+        g_dbg_aux_shunt_mV = bms_manager.getAuxShuntVoltage_V() * 1000.0f;
+        g_dbg_aux_bus_V = bms_manager.getAuxBusVoltage_V();
+        g_dbg_fan_shunt_mV = bms_manager.getFanShuntVoltage_V() * 1000.0f;
+        g_dbg_fan_bus_V = bms_manager.getFanBusVoltage_V();
+        g_dbg_ina_aux_read_ok = bms_manager.getAuxCurrentReadOkCount();
+        g_dbg_ina_aux_read_fail = bms_manager.getAuxCurrentReadFailCount();
+        g_dbg_ina_aux_last_hal = bms_manager.getAuxCurrentLastHalStatus();
 
         if (kManualContactorStagger) {
             const bool closed = maintainContactorStagger(now);
@@ -293,10 +467,6 @@ void StartSafetyTask(void* argument) {
                 bts71040SyncContactors(out_mask);
                 last_bts_out_mask = out_mask;
             }
-        }
-
-        if (kVehicleIntegrationTest) {
-            bms_manager.setFanPwmDuty(kIntegrationTestFanDutyPercent);
         }
 
         osDelay(PrimaryV2Contract::BMS_MANAGER_PERIOD_MS);

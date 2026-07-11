@@ -14,19 +14,20 @@
 namespace DeviceConfig {
     // Device Configuration
     // ===================
-    // Change this number to set the device ID for this daughter board
-    // CAN ID will be automatically calculated as: BASE_CAN_ID + DEVICE_NUMBER
-    static constexpr uint8_t DEVICE_NUMBER = 5;  // Change this: 1, 2, 3, 4, 5, 6, 7, 8
+    // Per-board CAN slot (0-based). Reflash each daughter with a unique value.
+    //   0 -> 0x100, 1 -> 0x101, ... 5 -> 0x105  (6 boards, matches PrimaryV2 MAX_MODULES)
+    // CAN ID = BASE_CAN_ID + DEVICE_NUMBER
+    static constexpr uint8_t DEVICE_NUMBER = 5;  // Set 0..5 uniquely per board before flashing
     
     // CAN ID Configuration
     // ===================
     static constexpr uint16_t BASE_CAN_ID = 0x100;  // Base CAN ID for daughter boards
-    static constexpr uint16_t MAX_DEVICES = 8;      // Maximum number of daughter boards
+    static constexpr uint16_t MAX_DEVICES = 6;      // Must match PrimaryV2 MAX_MODULES
     
     // Calculated CAN ID
     static constexpr uint16_t CAN_ID = BASE_CAN_ID + DEVICE_NUMBER;
     
-    // Validation (0..7 → CAN IDs 0x100..0x107)
+    // Validation (0..5 → CAN IDs 0x100..0x105)
     static_assert(DEVICE_NUMBER < MAX_DEVICES,
                   "DEVICE_NUMBER must be 0 .. MAX_DEVICES-1");
     static_assert(CAN_ID <= 0x7FF, 

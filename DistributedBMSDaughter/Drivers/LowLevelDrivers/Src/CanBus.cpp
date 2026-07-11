@@ -70,8 +70,17 @@ bool CanBus::configureFilterStdMask(uint16_t filter, uint16_t mask,
 // ---------------- TX ----------------
 CanBus::Result CanBus::sendStd(uint16_t id, const uint8_t* payload, uint8_t len, bool rtr)
 {
-    if (state_ == State::BusOff || state_ == State::Recovering)
+    if ((h_.Instance->ESR & CAN_ESR_BOFF) != 0U) {
+        state_ = State::BusOff;
+        bus_off_latched_ = true;
+        recovery_scheduled_ = true;
         return Result::BusOff;
+    }
+
+    if (state_ == State::BusOff || state_ == State::Recovering) {
+        state_ = State::Healthy;
+        bus_off_latched_ = false;
+    }
 
     if (HAL_CAN_GetTxMailboxesFreeLevel(&h_) == 0)
         return Result::Busy;
@@ -218,6 +227,28 @@ void CanBus::onError(uint32_t err)
 // ---------------- Recovery ----------------
 void CanBus::poll()
 {
+    const bool hw_bus_off = (h_.Instance->ESR & CAN_ESR_BOFF) != 0U;
+    const uint32_t now = osKernelGetTickCount();
+
+    if (!hw_bus_off &&
+        (state_ == State::BusOff || state_ == State::Recovering)) {
+        state_ = State::Healthy;
+        bus_off_latched_ = false;
+        recovery_scheduled_ = false;
+    }
+
+    if (hw_bus_off && state_ == State::Healthy) {
+        state_ = State::BusOff;
+        bus_off_latched_ = true;
+        recovery_scheduled_ = true;
+    }
+
+    if ((state_ == State::BusOff || hw_bus_off) && !recovery_scheduled_) {
+        if ((now - last_recovery_attempt_tick_) >= 200U) {
+            recovery_scheduled_ = true;
+        }
+    }
+
     if (recovery_scheduled_) {
         beginRecovery();
     }
@@ -230,16 +261,32 @@ void CanBus::poll()
 void CanBus::beginRecovery()
 {
     recovery_scheduled_ = false;
+    last_recovery_attempt_tick_ = osKernelGetTickCount();
 
     HAL_CAN_Stop(&h_);
     HAL_CAN_DeInit(&h_);
-    HAL_CAN_Init(&h_);
-    HAL_CAN_Start(&h_);
-    HAL_CAN_ActivateNotification(&h_,
+    if (HAL_CAN_Init(&h_) != HAL_OK) {
+        state_ = State::BusOff;
+        recovery_scheduled_ = true;
+        return;
+    }
+    (void)configureFilterAcceptAll();
+    if (HAL_CAN_Start(&h_) != HAL_OK) {
+        state_ = State::BusOff;
+        recovery_scheduled_ = true;
+        return;
+    }
+    (void)HAL_CAN_ActivateNotification(&h_,
         CAN_IT_RX_FIFO0_MSG_PENDING |
         CAN_IT_BUSOFF |
         CAN_IT_ERROR |
         CAN_IT_LAST_ERROR_CODE);
+
+    if ((h_.Instance->ESR & CAN_ESR_BOFF) == 0U) {
+        state_ = State::Healthy;
+        bus_off_latched_ = false;
+        return;
+    }
 
     tx_ok_at_recovery_ = tx_ok_;
     recovery_start_tick_ = osKernelGetTickCount();
@@ -248,14 +295,22 @@ void CanBus::beginRecovery()
 
 void CanBus::checkRecoveryProgress()
 {
-    if (tx_ok_ > tx_ok_at_recovery_) {
+    if ((h_.Instance->ESR & CAN_ESR_BOFF) == 0U) {
         state_ = State::Healthy;
+        bus_off_latched_ = false;
         return;
     }
 
-    if (osKernelGetTickCount() - recovery_start_tick_ > 500) {
+    if (tx_ok_ > tx_ok_at_recovery_) {
+        state_ = State::Healthy;
+        bus_off_latched_ = false;
+        return;
+    }
+
+    if (osKernelGetTickCount() - recovery_start_tick_ > 500U) {
         state_ = State::BusOff;
         recovery_scheduled_ = true;
+        last_recovery_attempt_tick_ = osKernelGetTickCount();
     }
 }
 

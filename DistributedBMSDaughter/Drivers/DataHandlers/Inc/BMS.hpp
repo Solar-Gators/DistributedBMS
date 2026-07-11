@@ -22,13 +22,13 @@ public:
 	    float vref;
 	    float adc_fs;
 
-	    ThermParams()
-	        : A(0.002687481f),
-	          B(0.0002829040f),
-	          C(0.000001183565f),
-	          rfix_k(10.0f),
-	          vref(3.3f),
-	          adc_fs(4096.0f) {}
+    ThermParams()
+        : A(0.0008929776265041391f),
+          B(0.000250374123231943f),
+          C(1.980949711932094e-07f),
+          rfix_k(10.0f),
+          vref(3.3f),
+          adc_fs(4095.0f) {}
 	};
 
 
@@ -42,7 +42,9 @@ public:
         std::array<float,6> ntc_C{};
         float avg_C = 0.0f;
         float high_C = -1000.0f;
+        float low_C = 1000.0f;
         uint8_t high_temp_idx = 0;
+        uint8_t low_temp_idx = 0;
 
         uint8_t num_cells = 0;
         uint8_t faults = 0;
@@ -70,7 +72,9 @@ public:
     uint8_t  low_cell_index()   const;
     float    average_temp_C()   const;
     float    high_temp_C()      const;
+    float    low_temp_C()       const;
     uint8_t  high_temp_index()  const;
+    uint8_t  low_temp_index()   const;
 
     void clear();
 

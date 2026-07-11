@@ -39,11 +39,24 @@ uint8_t getType(const uint8_t* data) {
 }
 
 bool decodeHighTemp(const uint8_t* data, float& temp, uint8_t& idx) {
+    float low = 1000.0f;
+    return decodeHighTemp(data, temp, idx, low);
+}
+
+bool decodeHighTemp(const uint8_t* data, float& high, uint8_t& high_idx, float& low) {
     if (data[0] != HIGH_TEMP) {
         return false;
     }
-    std::memcpy(&temp, &data[1], 4);
-    idx = data[5];
+    std::memcpy(&high, &data[1], 4);
+    high_idx = data[5];
+    const int16_t low_x10 =
+        static_cast<int16_t>(static_cast<uint16_t>(data[6]) |
+                             (static_cast<uint16_t>(data[7]) << 8));
+    if (low_x10 == static_cast<int16_t>(0x7FFF)) {
+        low = 1000.0f;
+    } else {
+        low = static_cast<float>(low_x10) / 10.0f;
+    }
     return true;
 }
 

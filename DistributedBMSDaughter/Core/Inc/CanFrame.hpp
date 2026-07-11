@@ -17,6 +17,13 @@ inline Frame8 make_high_temp(const BMS::Results& r) {
     f.bytes[0] = 0;
     std::memcpy(&f.bytes[1], &r.high_C, 4);
     f.bytes[5] = r.high_temp_idx;
+    /* Filtered low temp (deci-°C); 0x7FFF = no valid low in range. */
+    int16_t low_x10 = 0x7FFF;
+    if (r.low_C >= 10.0f && r.low_C <= 60.0f) {
+        low_x10 = static_cast<int16_t>(r.low_C * 10.0f);
+    }
+    f.bytes[6] = static_cast<uint8_t>(low_x10 & 0xFFu);
+    f.bytes[7] = static_cast<uint8_t>((low_x10 >> 8) & 0xFFu);
     return f;
 }
 

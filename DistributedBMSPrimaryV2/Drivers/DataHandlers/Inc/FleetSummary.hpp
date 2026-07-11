@@ -7,7 +7,7 @@
 /** Matches legacy Primary MCU `FleetSummaryData` / `ModuleSummaryData` for BmsManager. */
 namespace PrimaryBmsFleetCfg {
 constexpr uint32_t STALE_MS = PrimaryV2Contract::DAUGHTER_STALE_TIMEOUT_MS;
-constexpr uint8_t MAX_MODULES = 8;
+constexpr uint8_t MAX_MODULES = 6;
 }
 
 struct FleetSummaryData {
@@ -24,6 +24,11 @@ struct FleetSummaryData {
     uint32_t last_update_ms = 0;
 
     bool is_online(uint32_t now_ms, uint32_t stale_ms = PrimaryBmsFleetCfg::STALE_MS) const {
+        /* last_update_ms == 0 means no daughter RX yet. Without this, boot looks
+         * "online" for stale_ms ms ((now - 0) <= stale) and contactors chatter. */
+        if (last_update_ms == 0u) {
+            return false;
+        }
         return (now_ms - last_update_ms) <= stale_ms;
     }
 
@@ -44,6 +49,7 @@ struct ModuleSummaryData {
     uint8_t module_idx = 0xFF;
 
     float high_temp_C = -1000.0f;
+    float low_temp_C = 1000.0f;
     uint8_t high_temp_cell = 0;
 
     uint16_t high_mV = 0;
