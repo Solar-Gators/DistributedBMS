@@ -35,6 +35,7 @@ void BmsCanInterface::init(const Config& config) {
     last_battery_voltage_ms_ = 0;
     last_battery_temperature_ms_ = 0;
     last_battery_current_ms_ = 0;
+    last_module_status_ms_ = 0;
     last_tx_ms_ = 0;
     last_faults_ = bms_manager_.getActiveFaults();
     last_state_ = bms_manager_.getState();
@@ -78,6 +79,11 @@ void BmsCanInterface::sendBatteryCurrent() {
     sendWire(BmsCanProtocol::MessageEncoder::encodeBatteryCurrent(createBatteryCurrentMsg()));
 }
 
+void BmsCanInterface::sendModuleStatus(uint8_t module_index) {
+    sendWire(BmsCanProtocol::MessageEncoder::encodeModuleStatus(
+        module_index, createModuleStatusMsg(module_index)));
+}
+
 void BmsCanInterface::sendHeartbeat() {
     sendWire(BmsCanProtocol::MessageEncoder::encodeHeartbeat(createHeartbeatMsg(HAL_GetTick())));
 }
@@ -114,7 +120,7 @@ const BmsCanInterface::Config& BmsCanInterface::getConfig() const {
 }
 
 void BmsCanInterface::updatePeriodicTransmission(uint32_t now_ms) {
-    // Vehicle spec IDs 0x040–0x043 only (same periodic set as DistributedBMSPrimary).
+    // Pack frames 0x040–0x043 + per-module 0x044+N.
     if ((now_ms - last_bms_status_ms_) >= config_.bms_status_period_ms) {
         sendBmsStatus();
         last_bms_status_ms_ = now_ms;
@@ -130,6 +136,15 @@ void BmsCanInterface::updatePeriodicTransmission(uint32_t now_ms) {
     if ((now_ms - last_battery_current_ms_) >= config_.battery_current_period_ms) {
         sendBatteryCurrent();
         last_battery_current_ms_ = now_ms;
+    }
+    if ((now_ms - last_module_status_ms_) >= config_.module_status_period_ms) {
+        const uint8_t count = config_.module_count;
+        const uint8_t n =
+            (count > PrimaryBmsFleetCfg::MAX_MODULES) ? PrimaryBmsFleetCfg::MAX_MODULES : count;
+        for (uint8_t i = 0; i < n; ++i) {
+            sendModuleStatus(i);
+        }
+        last_module_status_ms_ = now_ms;
     }
 }
 
@@ -184,7 +199,14 @@ void BmsCanInterface::processReceivedMessages(uint32_t now_ms) {
         }
         ++rx_debug_.rx_count;
 
-        if (wire.id == BmsCanProtocol::BMS_COMMAND) {
+        if (wire.id == BmsCanProtocol::VEHICLE_KILL_SWITCH) {
+            handleKillSwitch(wire);
+        } else if (wire.id == BmsCanProtocol::BMS_DEBUG_MODE) {
+            BmsCanProtocol::DebugModeMsg dbg{};
+            if (BmsCanProtocol::MessageDecoder::decodeDebugMode(wire, dbg)) {
+                handleDebugMode(dbg);
+            }
+        } else if (wire.id == BmsCanProtocol::BMS_COMMAND) {
             BmsCanProtocol::CommandMsg cmd{};
             if (BmsCanProtocol::MessageDecoder::decodeCommand(wire, cmd)) {
                 handleCommand(cmd);
@@ -196,6 +218,17 @@ void BmsCanInterface::processReceivedMessages(uint32_t now_ms) {
                 handleConfigRequest(req);
             }
         }
+    }
+}
+
+void BmsCanInterface::handleKillSwitch(const CanFdFrame& frame) {
+    if (frame.dlc < 1) {
+        return;
+    }
+    // Byte 0 bit 0: 0 = kill, 1 = not kill.
+    if ((frame.data[0] & 0x01u) == 1u) {
+        bms_manager_.requestShutdown();
+        ++rx_kill_count_;
     }
 }
 
@@ -231,6 +264,10 @@ void BmsCanInterface::handleConfigRequest(const BmsCanProtocol::ConfigRequestMsg
         return;
     }
     sendWire(BmsCanProtocol::MessageEncoder::encodeConfigResponse(resp));
+}
+
+void BmsCanInterface::handleDebugMode(const BmsCanProtocol::DebugModeMsg& msg) {
+    bms_manager_.setDebugMode(msg.enabled, msg.force_contactors_closed, msg.disable_fault_detection);
 }
 
 BmsCanProtocol::BmsStatusMsg BmsCanInterface::createBmsStatusMsg(uint32_t now_ms) {
@@ -273,6 +310,25 @@ BmsCanProtocol::BatteryTemperatureMsg BmsCanInterface::createBatteryTemperatureM
 BmsCanProtocol::BatteryCurrentMsg BmsCanInterface::createBatteryCurrentMsg() {
     BmsCanProtocol::BatteryCurrentMsg msg{};
     msg.current_A = bms_manager_.getBatteryCurrent_A();
+    return msg;
+}
+
+BmsCanProtocol::ModuleStatusMsg BmsCanInterface::createModuleStatusMsg(uint8_t module_index) {
+    BmsCanProtocol::ModuleStatusMsg msg{};
+    const ModuleSummaryData m = bms_manager_.getModuleSummary(module_index);
+    if (!m.valid) {
+        msg.high_mV = 0;
+        msg.low_mV = 0;
+        msg.high_temp_C_x10 = 0;
+        msg.high_cell_idx = 0xFF;
+        msg.low_cell_idx = 0xFF;
+        return msg;
+    }
+    msg.high_mV = m.high_mV;
+    msg.low_mV = m.low_mV;
+    msg.high_temp_C_x10 = static_cast<int16_t>(m.high_temp_C * 10.0f);
+    msg.high_cell_idx = m.high_idx;
+    msg.low_cell_idx = m.low_idx;
     return msg;
 }
 

@@ -88,6 +88,7 @@ static constexpr std::array<uint8_t, CELLS> kBqCellMap1Based = {{1u, 2u, 3u, 4u,
 
 static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
 {
+
     for (uint8_t cell = 0; cell < CELLS; ++cell)
     {
         uint16_t mv = 0;
@@ -95,7 +96,15 @@ static HAL_StatusTypeDef readCellsFromAFE(std::array<uint16_t, CELLS>& cell_mV)
         {
             return HAL_ERROR;
         }
+
         cell_mV[cell] = mv;
+
+//        if ( cell == 3) {
+//        	cell_mV[2] = (uint16_t) ( ( ( float ) ( cell_mV[2] + mv) ) / 2 );
+//        	cell_mV[3] = cell_mV[2];
+//        }
+
+
     }
 
     return HAL_OK;
@@ -181,7 +190,7 @@ void StartDefaultTask(void *argument)
 			}
 			else
 			{
-				faultManager.setFault(FaultManager::FaultType::BQ76920_RESULT_ERROR);
+ 				//faultManager.setFault(FaultManager::FaultType::BQ76920_RESULT_ERROR);
 			}
 		}
 #endif
@@ -199,6 +208,7 @@ void StartDefaultTask(void *argument)
 			cellTempADC[i] = adc_buf[i];
 		}
         cellTempADC[5] = adc_buf[6];
+
 
 		if(dataValidator.validateADCReadings(cellTempADC) == 0){
 			osMutexAcquire(bmsMutex_id, osWaitForever);
@@ -231,10 +241,11 @@ void StartVoltageTask(void *argument)
 
         /* ---------------- CAN housekeeping ---------------- */
         can1.poll();   // Required for recovery / error handling
-        if (can1.busOffLatched()) {
+        if (can1.state() == CanBus::State::Healthy) {
+            faultManager.clearFault(FaultManager::FaultType::CAN_BUS_OFF);
+            faultManager.clearFault(FaultManager::FaultType::CAN_ERROR_PASSIVE);
+        } else if (can1.busOffLatched() || can1.state() == CanBus::State::BusOff) {
             faultManager.setFault(FaultManager::FaultType::CAN_BUS_OFF);
-        }else{
-        	faultManager.clearFault(FaultManager::FaultType::CAN_BUS_OFF);
         }
 
 

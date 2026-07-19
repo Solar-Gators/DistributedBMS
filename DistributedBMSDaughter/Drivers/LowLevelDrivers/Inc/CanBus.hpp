@@ -80,10 +80,12 @@ private:
     // Recovery helpers
     void beginRecovery();
     void checkRecoveryProgress();
+    void markHealthy();
 
     // RX ring buffer
     static constexpr size_t RX_CAPACITY = 32;
     static_assert((RX_CAPACITY & (RX_CAPACITY - 1)) == 0, "RX_CAPACITY must be power of 2");
+    static constexpr uint32_t RECOVERY_RETRY_MS = 500;
 
     uint8_t idxNext(uint8_t idx) const { return (idx + 1) & (RX_CAPACITY - 1); }
     bool rxPushIsr(const CanFrame& f);

@@ -7,6 +7,7 @@
 
 #include "BmsManager.hpp"
 #include "BmsFleet.hpp"
+#include "PrimaryV2Contract.hpp"
 #include "ads1115.hpp"
 #include "ina226.hpp"
 
@@ -37,6 +38,8 @@ BmsManager::BmsManager(BmsFleet* fleet,
     , active_faults_(0)
     , state_entry_time_ms_(0)
     , fault_recovery_start_time_ms_(0)
+    , battery_current_low(0.0f)
+    , battery_current_high(0.0f)
     , battery_current_A_(0.0f)
     , aux_current_A_(0.0f)
     , pack_voltage_V_(0.0f)
@@ -45,6 +48,7 @@ BmsManager::BmsManager(BmsFleet* fleet,
     , contactors_closed_(false)
     , contactor_close_request_(false)
     , contactor_open_request_(false)
+    , contactor_hold_open_(false)
     , contactor_stage_start_time_ms_(0)
     , contactor_stage_active_(false)
     , contactor_close_time_ms_(0)
@@ -80,6 +84,8 @@ void BmsManager::init()
     active_faults_ = 0;
     contactors_closed_ = false;
     fan_speed_percent_ = 0;
+    debug_contactor_enable_ms_ =
+        state_entry_time_ms_ + PrimaryV2Contract::DEBUG_CONTACTOR_STARTUP_GRACE_MS;
 
 
 
@@ -116,6 +122,18 @@ FleetSummaryData BmsManager::getFleetSummary() const
     }
     lockFleet_();
     copy = fleet_->summary();
+    unlockFleet_();
+    return copy;
+}
+
+ModuleSummaryData BmsManager::getModuleSummary(uint8_t module_idx) const
+{
+    ModuleSummaryData copy{};
+    if (fleet_ == nullptr || module_idx >= PrimaryBmsFleetCfg::MAX_MODULES) {
+        return copy;
+    }
+    lockFleet_();
+    copy = fleet_->moduleSnapshot(module_idx);
     unlockFleet_();
     return copy;
 }
@@ -168,11 +186,9 @@ const char* BmsManager::getFaultName(FaultType fault) const
         case FaultType::NONE: return "NONE";
         case FaultType::OVERVOLTAGE: return "OVERVOLTAGE";
         case FaultType::UNDERVOLTAGE: return "UNDERVOLTAGE";
-        case FaultType::CELL_IMBALANCE: return "CELL_IMBALANCE";
         case FaultType::OVERTEMPERATURE: return "OVERTEMPERATURE";
-        case FaultType::UNDERTEMPERATURE: return "UNDERTEMPERATURE";
-        case FaultType::BATTERY_OVERCURRENT: return "BATTERY_OVERCURRENT";
-        case FaultType::AUX_OVERCURRENT: return "AUX_OVERCURRENT";
+        case FaultType::CHARGE_OVERCURRENT: return "CHARGE_OVERCURRENT";
+        case FaultType::DISCHARGE_OVERCURRENT: return "DISCHARGE_OVERCURRENT";
         case FaultType::FLEET_DATA_STALE: return "FLEET_DATA_STALE";
         case FaultType::EMERGENCY_SHUTDOWN: return "EMERGENCY_SHUTDOWN";
         default: return "UNKNOWN";
@@ -231,12 +247,14 @@ void BmsManager::requestContactorsClose()
 {
     contactor_close_request_ = true;
     contactor_open_request_ = false;
+    contactor_hold_open_ = false;  // resume auto-close when safe
 }
 
 void BmsManager::requestContactorsOpen()
 {
     contactor_open_request_ = true;
     contactor_close_request_ = false;
+    contactor_hold_open_ = true;  // stay open until an explicit close
 }
 
 void BmsManager::requestShutdown()
@@ -246,8 +264,9 @@ void BmsManager::requestShutdown()
 
 void BmsManager::clearFaults()
 {
-    // Only clear non-critical faults
-    active_faults_ &= ~static_cast<uint16_t>(FaultType::EMERGENCY_SHUTDOWN);
+    // Clear latched sensor faults. EMERGENCY_SHUTDOWN is sticky until reboot/shutdown path.
+    active_faults_ &= static_cast<uint16_t>(FaultType::EMERGENCY_SHUTDOWN);
+    contactor_hold_open_ = false;  // allow auto-close after fault clear
 }
 
 // ========== Status ==========
@@ -329,9 +348,22 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
     if (battery_current_adc_ != nullptr &&
         (now_ms - last_battery_current_update_ms_) >= config_.ads1115_read_period_ms) {
         float adc_voltage_V;
+        float adc_voltage_V2;
         if (battery_current_adc_->readSingleEnded(config_.current_adc_channel, adc_voltage_V) == HAL_OK) {
-            battery_current_A_ = convertAdcToCurrent(adc_voltage_V);
+            battery_current_low = convertAdcToCurrentLow(adc_voltage_V);
         }
+        if (battery_current_adc_->readSingleEnded(1, adc_voltage_V2) == HAL_OK) {
+			battery_current_high = convertAdcToCurrentHigh(adc_voltage_V2);
+		}
+
+        // Low-range sensor saturates ~50 A; switch to the high-range reading at 45 A.
+        static constexpr float kCurrentCrossover_A = 45.0f;
+        if (std::fabs(battery_current_low) >= kCurrentCrossover_A) {
+            battery_current_A_ = battery_current_high;
+        } else {
+            battery_current_A_ = battery_current_low;
+        }
+
         last_battery_current_update_ms_ = now_ms;
     }
 
@@ -348,55 +380,51 @@ void BmsManager::updateCurrentMeasurements(uint32_t now_ms)
     if (fleet_ != nullptr) {
         lockFleet_();
         const auto& summary = fleet_->summary();
-        pack_voltage_V_ = summary.total_voltage_mV / 1000.0f;
+        pack_voltage_V_ = summary.total_voltage_cV / 100.0f;
         unlockFleet_();
     }
 }
 
 void BmsManager::updateFaults(uint32_t now_ms)
 {
-    // Skip fault detection if debug mode disables it
+    // Skip sensor fault detection if debug mode disables it.
+    // Preserve latched EMERGENCY_SHUTDOWN so a CAN kill/shutdown still sticks.
     if (config_.debug_mode.enabled && config_.debug_mode.disable_fault_detection) {
-        active_faults_ = 0;
+        active_faults_ &= static_cast<uint16_t>(FaultType::EMERGENCY_SHUTDOWN);
         return;
     }
 
-    uint16_t new_faults = 0;
+    uint16_t detected = 0;
 
     lockFleet_();
     const bool fleet_ok = (fleet_ != nullptr) && fleet_->has_data(now_ms);
+    const bool voltage_ok = fleet_ok && hasValidCellVoltageData();
+    const bool temp_ok = fleet_ok && hasValidTemperatureData();
 
-    // Voltage / thermal / imbalance faults require fresh daughter telemetry
-    if (fleet_ok && checkOvervoltage()) {
-        new_faults |= static_cast<uint16_t>(FaultType::OVERVOLTAGE);
+    // Voltage / thermal faults require fresh, fully-populated daughter telemetry
+    if (voltage_ok && checkOvervoltage()) {
+        detected |= static_cast<uint16_t>(FaultType::OVERVOLTAGE);
     }
-    if (fleet_ok && checkUndervoltage()) {
-        new_faults |= static_cast<uint16_t>(FaultType::UNDERVOLTAGE);
+    if (voltage_ok && checkUndervoltage()) {
+        detected |= static_cast<uint16_t>(FaultType::UNDERVOLTAGE);
     }
-    if (fleet_ok && checkCellImbalance()) {
-        new_faults |= static_cast<uint16_t>(FaultType::CELL_IMBALANCE);
+    if (temp_ok && checkOvertemperature()) {
+        detected |= static_cast<uint16_t>(FaultType::OVERTEMPERATURE);
     }
-    if (fleet_ok && checkOvertemperature()) {
-        new_faults |= static_cast<uint16_t>(FaultType::OVERTEMPERATURE);
+    if (checkChargeOvercurrent()) {
+        detected |= static_cast<uint16_t>(FaultType::CHARGE_OVERCURRENT);
     }
-    if (fleet_ok && checkUndertemperature()) {
-        new_faults |= static_cast<uint16_t>(FaultType::UNDERTEMPERATURE);
-    }
-    if (checkBatteryOvercurrent()) {
-        new_faults |= static_cast<uint16_t>(FaultType::BATTERY_OVERCURRENT);
-    }
-    if (checkAuxOvercurrent()) {
-        new_faults |= static_cast<uint16_t>(FaultType::AUX_OVERCURRENT);
+    if (checkDischargeOvercurrent()) {
+        detected |= static_cast<uint16_t>(FaultType::DISCHARGE_OVERCURRENT);
     }
     if (checkDataStale(now_ms)) {
-        new_faults |= static_cast<uint16_t>(FaultType::FLEET_DATA_STALE);
+        detected |= static_cast<uint16_t>(FaultType::FLEET_DATA_STALE);
     }
     unlockFleet_();
 
-    // Update active faults
-    active_faults_ = new_faults;
+    // Latch: once set, faults stay until clearFaults() (emergency never cleared here).
+    active_faults_ |= detected;
 
-    // If critical fault, trigger emergency shutdown
     if (hasCriticalFault()) {
         emergencyShutdown();
     }
@@ -415,11 +443,10 @@ void BmsManager::updateStateMachine(uint32_t now_ms)
             break;
 
         case BmsState::IDLE:
-            // Check for contactor close request
-            if (contactor_close_request_ && canCloseContactors()) {
+            // Auto-close when safe (no vehicle close command required).
+            if (!contactor_hold_open_ && canCloseContactors()) {
                 next_state = BmsState::OPERATIONAL;
             }
-            // Check for faults
             if (active_faults_ != 0) {
                 next_state = BmsState::FAULT;
             }
@@ -467,83 +494,25 @@ void BmsManager::updateStateMachine(uint32_t now_ms)
 
 void BmsManager::updateContactors(uint32_t now_ms)
 {
-    // Debug mode: Force contactors closed (bypasses all safety checks)
-    if (config_.debug_mode.enabled && config_.debug_mode.force_contactors_closed) {
-        if (!contactors_closed_) {
-            // Close both contactors immediately (no sequencing in debug mode)
-            if (contactor_gpio_port_ != nullptr) {
-                setContactorGpioState(true);
-            }
-            if (second_contactor_gpio_port_ != nullptr) {
-                setSecondContactorGpioState(true);
-            } else if (contactor_gpio_port_ != nullptr) {
-                // Only one contactor configured
-            }
-            contactors_closed_ = true;
-            contactor_close_time_ms_ = now_ms;
-            contactor_stage_active_ = false;
-            contactor_stage_start_time_ms_ = 0;
-        }
-        return;  // Debug mode bypasses all normal logic
-    }
-
-    // Default: contactors should be open unless in OPERATIONAL state
-    bool target_closed = (state_ == BmsState::OPERATIONAL);
-
-    // Calculate time since contactors were closed (for grace period)
-    uint32_t time_since_close = contactors_closed_ ? (now_ms - contactor_close_time_ms_) : UINT32_MAX;
-    bool in_grace_period = (time_since_close < config_.contactor_close_grace_period_ms);
-
-    // If we are not in OPERATIONAL (or we have an explicit open request),
-    // force everything open and reset sequencing state.
-    // Allow grace period after closing to prevent immediate reopening due to inrush/transients
-    if (!target_closed || contactor_open_request_ || 
-        (active_faults_ != 0 && !in_grace_period)) {
+    // Any latched fault opens contactors; no faults closes them.
+    // Faults latch in updateFaults() and clear only via clearFaults().
+    if (active_faults_ != 0) {
         setContactorGpioState(false);
         setSecondContactorGpioState(false);
         contactors_closed_ = false;
-        contactor_stage_active_ = false;
         contactor_stage_start_time_ms_ = 0;
-        contactor_close_time_ms_ = 0;
         return;
     }
 
-    // At this point, we want contactors closed and we're in OPERATIONAL state.
-    // If already closed, nothing to do.
-    if (contactors_closed_) {
-        return;
-    }
-
-    // If only one contactor GPIO is configured, close it immediately.
-    if (second_contactor_gpio_port_ == nullptr) {
-        setContactorGpioState(true);
-        contactors_closed_ = true;
-        contactor_close_time_ms_ = now_ms;  // Record when contactors were closed
-        return;
-    }
-
-    // Two-main-contactor sequencing (e.g. negative then positive):
-    // 1) Close first contactor (contactor_gpio_*).
-    // 2) After contactor_stagger_delay_ms, close second contactor and keep both closed.
-
-    if (!contactor_stage_active_) {
-        // Start stage 1: close first contactor
-        setContactorGpioState(true);
-        contactor_stage_active_ = true;
+    // No faults: close first contactor now, second after the stagger delay.
+    if (contactor_stage_start_time_ms_ == 0) {
         contactor_stage_start_time_ms_ = now_ms;
-        return;
     }
+    setContactorGpioState(true);
 
-    // Stage already active - check if delay has elapsed
-    uint32_t elapsed = now_ms - contactor_stage_start_time_ms_;
-    if (elapsed >= config_.contactor_stagger_delay_ms) {
-        // Close second contactor; both remain closed
+    if ((now_ms - contactor_stage_start_time_ms_) >= config_.contactor_stagger_delay_ms) {
         setSecondContactorGpioState(true);
         contactors_closed_ = true;
-        contactor_close_time_ms_ = now_ms;  // Record when contactors were fully closed
-
-        contactor_stage_active_ = false;
-        contactor_stage_start_time_ms_ = 0;
     }
 }
 
@@ -591,26 +560,26 @@ void BmsManager::enterState(BmsState new_state, uint32_t now_ms)
             break;
 
         case BmsState::IDLE:
-            // Ensure contactors are open
-            contactor_open_request_ = true;
+            // Contactors opened by updateContactors() while not OPERATIONAL.
             contactor_close_request_ = false;
             break;
 
         case BmsState::OPERATIONAL:
-            // Contactors will be closed by updateContactors()
+            contactor_open_request_ = false;
+            contactor_close_request_ = false;
             break;
 
         case BmsState::FAULT:
-            // Open contactors immediately
-            contactor_open_request_ = true;
+            // Leaving OPERATIONAL opens contactors. Hold open until clearFaults().
+            contactor_hold_open_ = true;
             contactor_close_request_ = false;
             fault_recovery_start_time_ms_ = 0;
             break;
 
         case BmsState::SHUTDOWN:
-            // Emergency shutdown actions
             contactor_open_request_ = true;
             contactor_close_request_ = false;
+            contactor_hold_open_ = true;  // do not auto-reclose after kill
             break;
     }
 }
@@ -629,103 +598,55 @@ void BmsManager::processState(BmsState state, uint32_t now_ms)
 }
 
 // ========== Private: Fault Detection ==========
+bool BmsManager::hasValidCellVoltageData() const
+{
+    if (fleet_ == nullptr) {
+        return false;
+    }
+    const auto& summary = fleet_->summary();
+    // Defaults are 0 until VOLTAGE_EXTREMES arrives; reject incomplete samples.
+    return summary.highest_cell_mV > 0 &&
+           summary.lowest_cell_mV > 0 &&
+           summary.highest_cell_mV >= summary.lowest_cell_mV;
+}
+
+bool BmsManager::hasValidTemperatureData() const
+{
+    if (fleet_ == nullptr) {
+        return false;
+    }
+    // Module/fleet default highTemp is -1000 until HIGH_TEMP arrives.
+    return fleet_->summary().highest_temp_C > -100.0f;
+}
+
 bool BmsManager::checkOvervoltage()
 {
     const auto& summary = fleet_->summary();
-    uint16_t threshold = config_.cell_overvoltage_mV;
-    uint16_t clear_threshold = threshold - config_.voltage_hysteresis_mV;
-
-    if (summary.highest_cell_mV > threshold) {
-        return true;
-    } else if (summary.highest_cell_mV < clear_threshold) {
-        return false;
-    }
-    // Hysteresis: keep previous state if in between
-    return hasFault(FaultType::OVERVOLTAGE);
+    return summary.highest_cell_mV > config_.cell_overvoltage_mV;
 }
 
 bool BmsManager::checkUndervoltage()
 {
     const auto& summary = fleet_->summary();
-    uint16_t threshold = config_.cell_undervoltage_mV;
-    uint16_t clear_threshold = threshold + config_.voltage_hysteresis_mV;
-
-    if (summary.lowest_cell_mV < threshold) {
-        return true;
-    } else if (summary.lowest_cell_mV > clear_threshold) {
-        return false;
-    }
-    // Hysteresis: keep previous state if in between
-    return hasFault(FaultType::UNDERVOLTAGE);
-}
-
-bool BmsManager::checkCellImbalance()
-{
-    const auto& summary = fleet_->summary();
-    uint16_t imbalance = summary.highest_cell_mV - summary.lowest_cell_mV;
-    uint16_t threshold = config_.cell_imbalance_mV;
-
-    return imbalance > threshold;
+    return summary.lowest_cell_mV < config_.cell_undervoltage_mV;
 }
 
 bool BmsManager::checkOvertemperature()
 {
     const auto& summary = fleet_->summary();
-    float threshold = config_.overtemp_C;
-    float clear_threshold = threshold - config_.temp_hysteresis_C;
-
-    if (summary.highest_temp_C > threshold) {
-        return true;
-    } else if (summary.highest_temp_C < clear_threshold) {
-        return false;
-    }
-    // Hysteresis: keep previous state if in between
-    return hasFault(FaultType::OVERTEMPERATURE);
+    return summary.highest_temp_C > config_.overtemp_C;
 }
 
-bool BmsManager::checkUndertemperature()
+bool BmsManager::checkChargeOvercurrent()
 {
-    const auto& summary = fleet_->summary();
-    float threshold = config_.undertemp_C;
-    float clear_threshold = threshold + config_.temp_hysteresis_C;
-
-    if (summary.highest_temp_C < threshold) {
-        return true;
-    } else if (summary.highest_temp_C > clear_threshold) {
-        return false;
-    }
-    // Hysteresis: keep previous state if in between
-    return hasFault(FaultType::UNDERTEMPERATURE);
+    // Negative pack current = charging.
+    return battery_current_A_ > config_.charge_overcurrent_A;
 }
 
-bool BmsManager::checkBatteryOvercurrent()
+bool BmsManager::checkDischargeOvercurrent()
 {
-    float abs_current = (battery_current_A_ < 0) ? -battery_current_A_ : battery_current_A_;
-    float threshold = config_.overcurrent_A;
-    float clear_threshold = threshold - config_.current_hysteresis_A;
-
-    if (abs_current > threshold) {
-        return true;
-    } else if (abs_current < clear_threshold) {
-        return false;
-    }
-    // Hysteresis: keep previous state if in between
-    return hasFault(FaultType::BATTERY_OVERCURRENT);
-}
-
-bool BmsManager::checkAuxOvercurrent()
-{
-    float abs_current = (aux_current_A_ < 0) ? -aux_current_A_ : aux_current_A_;
-    float threshold = config_.aux_overcurrent_A;
-    float clear_threshold = threshold - config_.current_hysteresis_A;
-
-    if (abs_current > threshold) {
-        return true;
-    } else if (abs_current < clear_threshold) {
-        return false;
-    }
-    // Hysteresis: keep previous state if in between
-    return hasFault(FaultType::AUX_OVERCURRENT);
+    // Positive pack current = discharging.
+    return battery_current_A_ < -config_.discharge_overcurrent_A;
 }
 
 bool BmsManager::checkDataStale(uint32_t now_ms)
@@ -737,30 +658,53 @@ bool BmsManager::checkDataStale(uint32_t now_ms)
 }
 
 // ========== Private: Current Measurement ==========
-float BmsManager::convertAdcToCurrent(float adc_voltage_V)
+float BmsManager::convertAdcToCurrentLow(float x)
 {
-    // Nonlinear calibration of battery current based on ADS1115 voltage reading.
-    // This uses the empirically derived curve from the User.cpp test code:
-    //   y = 101.4864 + (-29.84563 - 101.4864) / (1 + (x / 2.756892) ^ 2.643521)
-    // where:
-    //   x = ADC voltage (V)
-    //   y = battery current (A)
-    //
-    // Note: config_.current_* fields are currently unused by this fit.
-
-    const float a = 101.4864f;
-    const float b = -29.84563f;
-    const float c = 2.756892f;
-    const float d = 2.643521f;
-
-
-
-    float x = adc_voltage_V;
-    float denom = 1.0f + std::pow(x / c, d);
-    float y = a + (b - a) / denom;
-
-    return y;
+    return (((((3.96652f*x
+              -28.7536f)*x
+              +78.1917f)*x
+              -98.0655f)*x
+              +92.6744f)*x
+              -72.9240f);
 }
+
+float BmsManager::convertAdcToCurrentHigh(float x)
+{
+    return 150.63f*x - 250.41f;
+}
+
+
+//float BmsManager::convertAdcToCurrent(float adc_voltage_V)
+//{
+//    // Nonlinear calibration of battery current based on ADS1115 voltage reading.
+//    // This uses the empirically derived curve from the User.cpp test code:
+//    //   y = 101.4864 + (-29.84563 - 101.4864) / (1 + (x / 2.756892) ^ 2.643521)
+//    // where:
+//    //   x = ADC voltage (V)
+//    //   y = battery current (A)
+//    //
+//    // Note: config_.current_* fields are currently unused by this fit.
+//
+//    //if(adc_voltage_V)//2.305V - charging
+//	const float a = 101.4864f;
+//    const float b = -29.84563f;
+//    const float c = 2.756892f;
+//    const float d = 2.643521f;
+//
+//
+//
+//    float x = adc_voltage_V;
+//    float denom = 1.0f + std::pow(x / c, d);
+//    float y = a + (b - a) / denom;
+//
+//    if (y > 47.25) {
+//        y = 1000;
+//    } else if (y < -21.33) {
+//        y = -1000;
+//    }
+//
+//    return y;
+//}
 
 // ========== Private: Hardware Control ==========
 void BmsManager::setContactorGpioState(bool closed)

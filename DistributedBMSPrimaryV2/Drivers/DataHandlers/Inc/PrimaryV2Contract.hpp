@@ -11,6 +11,7 @@ constexpr uint32_t VEHICLE_COMMAND_PROCESS_MS = 100;
 constexpr uint32_t INA226_READ_PERIOD_MS = 500;
 constexpr uint32_t CRITICAL_CAN_TX_MAX_PERIOD_MS = 1000;
 constexpr uint32_t CONTACTOR_REACTION_MAX_MS = 500;
+constexpr uint32_t DEBUG_CONTACTOR_STARTUP_GRACE_MS = 2000;
 
 // Orchestration tick policy (User.cpp scheduler table).
 constexpr uint32_t DEFAULT_TASK_LOOP_DELAY_MS = 10;

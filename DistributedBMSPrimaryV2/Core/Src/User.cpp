@@ -77,6 +77,10 @@ void setup() {
     fleet.registerDaughter(0x100, 0);
     fleet.registerDaughter(0x101, 1);
     fleet.registerDaughter(0x102, 2);
+    fleet.registerDaughter(0x103, 3);
+    fleet.registerDaughter(0x104, 4);
+    fleet.registerDaughter(0x105, 5);
+    //fleet.registerDaughter(0x101, 1);
 
     (void)adc.init();
     /* Shunt / I_max must match hardware (legacy Primary used 20 mΩ, 100 A max). */
@@ -91,11 +95,11 @@ void setup() {
     //bms_manager.setFanPwmDuty(50);
 
     BmsManager::Config cfg;
-    cfg.cell_overvoltage_mV = 4220;
-    cfg.cell_undervoltage_mV = 2500;
-    cfg.overtemp_C = 100.0f;
-    cfg.overcurrent_A = 100.0f;
-    cfg.aux_overcurrent_A = 50.0f;
+    cfg.cell_overvoltage_mV = 4150;
+    cfg.cell_undervoltage_mV = 2550;
+    cfg.overtemp_C = 57.0f;
+    cfg.discharge_overcurrent_A = 58.0f;
+    cfg.charge_overcurrent_A = 24.0f;
     cfg.current_shunt_resistance_ohm = 0.001f;
     cfg.current_gain = 50.0f;
     cfg.current_offset_V = 0.0f;
@@ -104,11 +108,16 @@ void setup() {
     cfg.ina226_read_period_ms = PrimaryV2Contract::INA226_READ_PERIOD_MS;
     bms_manager.setConfig(cfg);
 
+    // Debug mode (WARNING: disables safety — testing only). Call after setConfig.
+    // setDebugMode(true, true, true): force contactors + disable sensor faults.
+    bms_manager.setDebugMode(false, false, false);
+
     bms_manager.init();
 
     BmsCanInterface::Config vcan_cfg{};
-    vcan_cfg.heartbeat_period_ms = 100;
-    vcan_cfg.pack_status_period_ms = 100;
+    vcan_cfg.module_count = 6;  // IDs 0x044..0x049 (matches registerDaughter slots)
+    vcan_cfg.enable_fault_messages = false;
+    vcan_cfg.enable_state_change_messages = false;
     vehicle_iface.init(vcan_cfg);
 
     HAL_GPIO_WritePin(NCS_A_GPIO_Port, NCS_A_Pin, GPIO_PIN_SET);
@@ -125,6 +134,7 @@ void StartDefaultTask(void* argument) {
         CanBus::Frame rx{};
         (void)osMutexAcquire(s_fleet_mutex, osWaitForever);
         while (daughter_can.read(rx)) {
+
             fleet.handleMessage(rx, osKernelGetTickCount());
             HAL_GPIO_TogglePin(ERROR_LED_GPIO_Port, ERROR_LED_Pin);
         }

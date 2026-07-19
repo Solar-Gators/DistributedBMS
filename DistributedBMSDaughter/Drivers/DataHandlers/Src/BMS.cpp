@@ -83,7 +83,7 @@ void BMS::compute_cell_stats() {
     uint8_t imin = 0, imax = 0;
     uint8_t used = 0;
 
-    for (uint8_t k=0; k<5; ++k) {
+    for (uint8_t k=0; k<6; ++k) {
         uint8_t phys = cell_phys_map_[k];
         if (!is_valid_slot(phys)) continue;
 

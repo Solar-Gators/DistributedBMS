@@ -21,11 +21,11 @@ public:
         NONE = 0,
         OVERVOLTAGE = 1 << 0,
         UNDERVOLTAGE = 1 << 1,
-        CELL_IMBALANCE = 1 << 2,
+        // bit 2 reserved (was CELL_IMBALANCE)
         OVERTEMPERATURE = 1 << 3,
-        UNDERTEMPERATURE = 1 << 4,
-        BATTERY_OVERCURRENT = 1 << 5,
-        AUX_OVERCURRENT = 1 << 6,
+        CHARGE_OVERCURRENT = 1 << 4,     // bit 4 (was UNDERTEMPERATURE)
+        DISCHARGE_OVERCURRENT = 1 << 5,  // was BATTERY_OVERCURRENT
+        // bit 6 reserved (was AUX_OVERCURRENT)
         FLEET_DATA_STALE = 1 << 7,
         EMERGENCY_SHUTDOWN = 1 << 8,
     };
@@ -46,8 +46,10 @@ public:
         float overtemp_C = 45.0f;
         float undertemp_C = -10.0f;
 
-        float overcurrent_A = 100.0f;
-        float aux_overcurrent_A = 20.0f;
+        /** Trip when pack current > this (A). Positive current = discharge. */
+        float discharge_overcurrent_A = 100.0f;
+        /** Trip when pack current < -this (A). Negative current = charge. */
+        float charge_overcurrent_A = 50.0f;
 
         uint16_t voltage_hysteresis_mV = 50;
         float temp_hysteresis_C = 2.0f;
@@ -64,7 +66,6 @@ public:
         float current_offset_V = 0.0f;
 
         uint32_t contactor_stagger_delay_ms = 500;
-        uint32_t contactor_close_grace_period_ms = 500;
 
         struct DebugMode {
             bool enabled = false;
@@ -80,6 +81,7 @@ public:
 
     /** Thread-safe snapshot (copies under fleet mutex when configured). */
     FleetSummaryData getFleetSummary() const;
+    ModuleSummaryData getModuleSummary(uint8_t module_idx) const;
     float getBatteryCurrent_A() const;
     float getAuxCurrent_A() const;
     float getPackVoltage_V() const;
@@ -132,14 +134,15 @@ private:
 
     bool checkOvervoltage();
     bool checkUndervoltage();
-    bool checkCellImbalance();
     bool checkOvertemperature();
-    bool checkUndertemperature();
-    bool checkBatteryOvercurrent();
-    bool checkAuxOvercurrent();
+    bool checkChargeOvercurrent();
+    bool checkDischargeOvercurrent();
     bool checkDataStale(uint32_t now_ms);
+    bool hasValidCellVoltageData() const;
+    bool hasValidTemperatureData() const;
 
-    float convertAdcToCurrent(float adc_voltage_V);
+    float convertAdcToCurrentLow(float x);
+    float convertAdcToCurrentHigh(float x);
 
     void lockFleet_() const;
     void unlockFleet_() const;
@@ -173,6 +176,11 @@ private:
     uint32_t state_entry_time_ms_;
     uint32_t fault_recovery_start_time_ms_;
 
+    /** Low-range current sensor (precise, saturates ~50 A). */
+    float battery_current_low;
+    /** High-range current sensor (used above the crossover threshold). */
+    float battery_current_high;
+    /** Selected current used for telemetry and over/under-current checks. */
     float battery_current_A_;
     float aux_current_A_;
     float pack_voltage_V_;
@@ -182,9 +190,14 @@ private:
     bool contactors_closed_;
     bool contactor_close_request_;
     bool contactor_open_request_;
+    /** When true, stay open in IDLE even if canCloseContactors() (set by open cmd). */
+    bool contactor_hold_open_;
     uint32_t contactor_stage_start_time_ms_;
     bool contactor_stage_active_;
     uint32_t contactor_close_time_ms_;
+
+    /** Earliest tick when debug force-close may engage (allows CAN kill at boot). */
+    uint32_t debug_contactor_enable_ms_ = 0;
 
     uint8_t fan_speed_percent_;
 };

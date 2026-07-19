@@ -29,10 +29,17 @@ namespace BmsCanProtocol {
 
 enum CanId : uint16_t {
     // Vehicle / specification IDs (ID-based, not device-based)
+    VEHICLE_KILL_SWITCH = 0x010,  // Byte0 bit0: 0=kill, 1=not kill
     BMS_STATUS = 0x040,  // BMS Status: faults, contactors, daughter boards
     BMS_BATTERY_VOLTAGE = 0x041,
     BMS_BATTERY_TEMPERATURE = 0x042,
     BMS_BATTERY_CURRENT = 0x043,
+
+    /** Per-module status: ID = BMS_MODULE_BASE + module_index (0..7 → 0x044..0x04B). */
+    BMS_MODULE_BASE = 0x044,
+
+    /** Vehicle → BMS: enter/exit debug mode (see DebugModeMsg). */
+    BMS_DEBUG_MODE = 0x0A1,
 
     BMS_HEARTBEAT = 0x180,
     BMS_PACK_STATUS = 0x181,
@@ -58,10 +65,10 @@ enum BmsStatusFaultCode : uint16_t {
     BMS_FAULT_NONE = 0x0000,
     BMS_FAULT_OVERVOLTAGE = 0x0001,
     BMS_FAULT_UNDERVOLTAGE = 0x0002,
-    BMS_FAULT_CELL_IMBALANCE = 0x0004,
+    BMS_FAULT_CELL_IMBALANCE = 0x0004,       // unused (reserved)
     BMS_FAULT_OVERTEMPERATURE = 0x0008,
-    BMS_FAULT_UNDERTEMPERATURE = 0x0010,
-    BMS_FAULT_BATTERY_OVERCURRENT = 0x0020,
+    BMS_FAULT_CHARGE_OVERCURRENT = 0x0010,
+    BMS_FAULT_DISCHARGE_OVERCURRENT = 0x0020,
 };
 
 struct BmsStatusMsg {
@@ -89,6 +96,15 @@ struct BatteryTemperatureMsg {
 struct BatteryCurrentMsg {
     float current_A;
     uint8_t reserved[4];
+};
+
+/** One frame per daughter module (CAN ID 0x044 + module index). */
+struct ModuleStatusMsg {
+    uint16_t high_mV;
+    uint16_t low_mV;
+    int16_t high_temp_C_x10;
+    uint8_t high_cell_idx;
+    uint8_t low_cell_idx;
 };
 
 struct HeartbeatMsg {
@@ -183,6 +199,18 @@ struct ConfigRequestMsg {
     uint8_t reserved[7];
 };
 
+/**
+ * 0x0A1 Debug mode command (vehicle → BMS).
+ * Byte0 bit0: enabled
+ * Byte0 bit1: force_contactors_closed
+ * Byte0 bit2: disable_fault_detection
+ */
+struct DebugModeMsg {
+    bool enabled = false;
+    bool force_contactors_closed = false;
+    bool disable_fault_detection = false;
+};
+
 struct ConfigResponseMsg {
     uint8_t response_type;
     uint8_t reserved;
@@ -198,6 +226,8 @@ public:
     static CanFdFrame encodeBatteryVoltage(const BatteryVoltageMsg& msg);
     static CanFdFrame encodeBatteryTemperature(const BatteryTemperatureMsg& msg);
     static CanFdFrame encodeBatteryCurrent(const BatteryCurrentMsg& msg);
+    /** Encode module status for CAN ID BMS_MODULE_BASE + module_index. */
+    static CanFdFrame encodeModuleStatus(uint8_t module_index, const ModuleStatusMsg& msg);
     static CanFdFrame encodeHeartbeat(const HeartbeatMsg& msg);
     static CanFdFrame encodePackStatus(const PackStatusMsg& msg);
     static CanFdFrame encodeTemperature(const TemperatureMsg& msg);
@@ -217,6 +247,7 @@ class MessageDecoder {
 public:
     static bool decodeCommand(const CanFdFrame& frame, CommandMsg& msg);
     static bool decodeConfigRequest(const CanFdFrame& frame, ConfigRequestMsg& msg);
+    static bool decodeDebugMode(const CanFdFrame& frame, DebugModeMsg& msg);
     static CanId getMessageType(uint16_t can_id);
 
 private:

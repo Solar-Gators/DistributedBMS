@@ -75,6 +75,23 @@ CanFdFrame MessageEncoder::encodeBatteryCurrent(const BatteryCurrentMsg& msg) {
     return frame;
 }
 
+CanFdFrame MessageEncoder::encodeModuleStatus(uint8_t module_index, const ModuleStatusMsg& msg) {
+    CanFdFrame frame{};
+    frame.extended = false;
+    frame.id = static_cast<uint16_t>(BMS_MODULE_BASE + (module_index & 0x07u));
+    frame.fd_frame = false;
+    frame.dlc = 8;
+    frame.data[0] = static_cast<uint8_t>((msg.high_mV >> 8) & 0xFF);
+    frame.data[1] = static_cast<uint8_t>(msg.high_mV & 0xFF);
+    frame.data[2] = static_cast<uint8_t>((msg.low_mV >> 8) & 0xFF);
+    frame.data[3] = static_cast<uint8_t>(msg.low_mV & 0xFF);
+    frame.data[4] = static_cast<uint8_t>((msg.high_temp_C_x10 >> 8) & 0xFF);
+    frame.data[5] = static_cast<uint8_t>(msg.high_temp_C_x10 & 0xFF);
+    frame.data[6] = msg.high_cell_idx;
+    frame.data[7] = msg.low_cell_idx;
+    return frame;
+}
+
 CanFdFrame MessageEncoder::encodeHeartbeat(const HeartbeatMsg& msg) {
     CanFdFrame frame{};
     frame.extended = false;
@@ -218,6 +235,17 @@ bool MessageDecoder::decodeConfigRequest(const CanFdFrame& frame, ConfigRequestM
     return true;
 }
 
+bool MessageDecoder::decodeDebugMode(const CanFdFrame& frame, DebugModeMsg& msg) {
+    if (frame.id != BMS_DEBUG_MODE || frame.dlc < 1) {
+        return false;
+    }
+    const uint8_t flags = frame.data[0];
+    msg.enabled = (flags & 0x01u) != 0;
+    msg.force_contactors_closed = (flags & 0x02u) != 0;
+    msg.disable_fault_detection = (flags & 0x04u) != 0;
+    return true;
+}
+
 CanId MessageDecoder::getMessageType(uint16_t can_id) {
     if (can_id == BMS_STATUS) {
         return BMS_STATUS;
@@ -231,6 +259,9 @@ CanId MessageDecoder::getMessageType(uint16_t can_id) {
     if (can_id == BMS_BATTERY_CURRENT) {
         return BMS_BATTERY_CURRENT;
     }
+    if (can_id >= BMS_MODULE_BASE && can_id <= (BMS_MODULE_BASE + 7)) {
+        return BMS_MODULE_BASE;
+    }
     if (can_id >= BMS_HEARTBEAT && can_id <= BMS_CELL_VOLTAGES) {
         return static_cast<CanId>(can_id);
     }
@@ -242,6 +273,9 @@ CanId MessageDecoder::getMessageType(uint16_t can_id) {
     }
     if (can_id == BMS_CONFIG_REQUEST) {
         return BMS_CONFIG_REQUEST;
+    }
+    if (can_id == BMS_DEBUG_MODE) {
+        return BMS_DEBUG_MODE;
     }
     if (can_id == BMS_CONFIG_RESPONSE) {
         return BMS_CONFIG_RESPONSE;

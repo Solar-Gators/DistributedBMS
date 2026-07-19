@@ -22,7 +22,7 @@ bool CanBus::start()
         return false;
     }
 
-    state_ = State::Healthy;
+    markHealthy();
     return true;
 }
 
@@ -70,11 +70,15 @@ bool CanBus::configureFilterStdMask(uint16_t filter, uint16_t mask,
 // ---------------- TX ----------------
 CanBus::Result CanBus::sendStd(uint16_t id, const uint8_t* payload, uint8_t len, bool rtr)
 {
-    if (state_ == State::BusOff || state_ == State::Recovering)
+    // Block only while waiting for beginRecovery(); allow TX during Recovering so
+    // checkRecoveryProgress() can observe a successful mailbox load.
+    if (state_ == State::BusOff) {
         return Result::BusOff;
+    }
 
-    if (HAL_CAN_GetTxMailboxesFreeLevel(&h_) == 0)
+    if (HAL_CAN_GetTxMailboxesFreeLevel(&h_) == 0) {
         return Result::Busy;
+    }
 
     CAN_TxHeaderTypeDef hdr{};
     hdr.IDE = CAN_ID_STD;
@@ -88,6 +92,9 @@ CanBus::Result CanBus::sendStd(uint16_t id, const uint8_t* payload, uint8_t len,
 
     if (st == HAL_OK) {
         ++tx_ok_;
+        if (state_ == State::Recovering) {
+            markHealthy();
+        }
         return Result::Ok;
     }
 
@@ -104,11 +111,13 @@ CanBus::Result CanBus::sendStd(uint16_t id,
 
 CanBus::Result CanBus::sendExt(uint32_t id, const uint8_t* payload, uint8_t len, bool rtr)
 {
-    if (state_ != State::Healthy)
+    if (state_ == State::BusOff) {
         return Result::BusOff;
+    }
 
-    if (HAL_CAN_GetTxMailboxesFreeLevel(&h_) == 0)
+    if (HAL_CAN_GetTxMailboxesFreeLevel(&h_) == 0) {
         return Result::NoMailboxes;
+    }
 
     CAN_TxHeaderTypeDef hdr{};
     hdr.IDE = CAN_ID_EXT;
@@ -122,6 +131,9 @@ CanBus::Result CanBus::sendExt(uint32_t id, const uint8_t* payload, uint8_t len,
 
     if (st == HAL_OK) {
         ++tx_ok_;
+        if (state_ == State::Recovering) {
+            markHealthy();
+        }
         return Result::Ok;
     }
 
@@ -216,6 +228,13 @@ void CanBus::onError(uint32_t err)
 }
 
 // ---------------- Recovery ----------------
+void CanBus::markHealthy()
+{
+    state_ = State::Healthy;
+    bus_off_latched_ = false;
+    recovery_scheduled_ = false;
+}
+
 void CanBus::poll()
 {
     if (recovery_scheduled_) {
@@ -233,9 +252,22 @@ void CanBus::beginRecovery()
 
     HAL_CAN_Stop(&h_);
     HAL_CAN_DeInit(&h_);
-    HAL_CAN_Init(&h_);
-    HAL_CAN_Start(&h_);
-    HAL_CAN_ActivateNotification(&h_,
+    if (HAL_CAN_Init(&h_) != HAL_OK) {
+        state_ = State::BusOff;
+        recovery_scheduled_ = true;
+        return;
+    }
+
+    // Filters are lost across DeInit/Init; restore accept-all used at startup.
+    (void)configureFilterAcceptAll();
+
+    if (HAL_CAN_Start(&h_) != HAL_OK) {
+        state_ = State::BusOff;
+        recovery_scheduled_ = true;
+        return;
+    }
+
+    (void)HAL_CAN_ActivateNotification(&h_,
         CAN_IT_RX_FIFO0_MSG_PENDING |
         CAN_IT_BUSOFF |
         CAN_IT_ERROR |
@@ -249,11 +281,11 @@ void CanBus::beginRecovery()
 void CanBus::checkRecoveryProgress()
 {
     if (tx_ok_ > tx_ok_at_recovery_) {
-        state_ = State::Healthy;
+        markHealthy();
         return;
     }
 
-    if (osKernelGetTickCount() - recovery_start_tick_ > 500) {
+    if (osKernelGetTickCount() - recovery_start_tick_ > RECOVERY_RETRY_MS) {
         state_ = State::BusOff;
         recovery_scheduled_ = true;
     }

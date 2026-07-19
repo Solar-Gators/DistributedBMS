@@ -216,8 +216,10 @@ void BmsFleet::refreshSummaryCache(uint32_t now_ms) {
     }
 
     const FleetData& f = fleet_;
-    summary_cache_.total_voltage_mV =
-        static_cast<uint16_t>(std::min<uint32_t>(f.totalVoltage, 0xFFFFu));
+    // FleetData::totalVoltage is mV; store centivolts (V×100) so uint16 covers ~655 V.
+    const uint32_t total_cV = f.totalVoltage / 10u;
+    summary_cache_.total_voltage_cV =
+        static_cast<uint16_t>(std::min<uint32_t>(total_cV, 0xFFFFu));
     summary_cache_.highest_cell_mV = f.highestVoltage;
     summary_cache_.lowest_cell_mV = f.lowestVoltage;
     summary_cache_.highest_temp_C = f.highestTemp;
@@ -283,7 +285,7 @@ size_t BmsFleet::packFleetData(uint8_t* out) const {
     const int16_t highest_c_x10 =
         static_cast<int16_t>(std::round(static_cast<double>(f.highestTemp * 10.0f)));
 
-    put_u16(static_cast<uint16_t>(f.totalVoltage));
+    put_u16(static_cast<uint16_t>(std::min<uint32_t>(f.totalVoltage / 10u, 0xFFFFu)));
     put_u16(f.highestVoltage);
     put_u16(f.lowestVoltage);
     put_s16(highest_c_x10);

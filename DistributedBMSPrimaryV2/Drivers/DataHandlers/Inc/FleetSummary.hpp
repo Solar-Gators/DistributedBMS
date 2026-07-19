@@ -11,7 +11,8 @@ constexpr uint8_t MAX_MODULES = 8;
 }
 
 struct FleetSummaryData {
-    uint16_t total_voltage_mV = 0;
+    /** Pack voltage in centivolts (V × 100). uint16 covers up to 655.35 V. */
+    uint16_t total_voltage_cV = 0;
     uint16_t highest_cell_mV = 0;
     uint16_t lowest_cell_mV = 0;
 
@@ -28,7 +29,7 @@ struct FleetSummaryData {
     }
 
     void clear() {
-        total_voltage_mV = 0;
+        total_voltage_cV = 0;
         highest_cell_mV = 0;
         lowest_cell_mV = 0;
         highest_temp_C = -1000.0f;
