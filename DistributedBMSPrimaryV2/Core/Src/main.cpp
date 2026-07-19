@@ -123,6 +123,9 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* TIM3 is HAL tick; unfreeze so HAL_GetTick advances while debugger is halted. */
+  __HAL_DBGMCU_UNFREEZE_TIM3();
+  __HAL_DBGMCU_UNFREEZE_I2C2_TIMEOUT();
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -133,7 +136,8 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  __HAL_DBGMCU_UNFREEZE_TIM3();
+  __HAL_DBGMCU_UNFREEZE_I2C2_TIMEOUT();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */

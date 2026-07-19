@@ -64,6 +64,8 @@ public:
         float current_shunt_resistance_ohm = 0.001f;
         float current_gain = 1.0f;
         float current_offset_V = 0.0f;
+        /** INA226 aux (buck) zero offset in amps; subtract from raw reading. */
+        float aux_current_offset_A = 0.0f;
 
         uint32_t contactor_stagger_delay_ms = 500;
 
@@ -74,7 +76,10 @@ public:
         } debug_mode;
     };
 
-    BmsManager(BmsFleet* fleet, ADS1115* battery_current_adc, INA226* aux_current_monitor);
+    BmsManager(BmsFleet* fleet,
+               ADS1115* battery_current_adc,
+               INA226* aux_current_monitor,
+               INA226* fan_current_monitor = nullptr);
 
     void init();
     void update(uint32_t now_ms);
@@ -84,6 +89,7 @@ public:
     ModuleSummaryData getModuleSummary(uint8_t module_idx) const;
     float getBatteryCurrent_A() const;
     float getAuxCurrent_A() const;
+    float getFanCurrent_A() const;
     float getPackVoltage_V() const;
     bool hasValidData(uint32_t now_ms) const;
 
@@ -120,6 +126,9 @@ public:
     void setDebugMode(bool enabled, bool force_contactors = false, bool disable_faults = false);
     bool isDebugModeEnabled() const;
     void setFanPwmDuty(uint8_t percent);
+    /** When true, updateContactors() does not drive GPIO or clear contactors_closed_. */
+    void setExternalContactorControl(bool enabled);
+    void setReportedContactorsClosed(bool closed);
 
 private:
     void updateFaults(uint32_t now_ms);
@@ -158,6 +167,7 @@ private:
     osMutexId_t fleet_access_mutex_{nullptr};
     ADS1115* battery_current_adc_;
     INA226* aux_current_monitor_;
+    INA226* fan_current_monitor_;
 
     GPIO_TypeDef* contactor_gpio_port_;
     uint16_t contactor_gpio_pin_;
@@ -183,11 +193,14 @@ private:
     /** Selected current used for telemetry and over/under-current checks. */
     float battery_current_A_;
     float aux_current_A_;
+    float fan_current_A_;
     float pack_voltage_V_;
     uint32_t last_battery_current_update_ms_;
     uint32_t last_aux_current_update_ms_;
+    uint32_t last_fan_current_update_ms_;
 
     bool contactors_closed_;
+    bool external_contactor_control_{false};
     bool contactor_close_request_;
     bool contactor_open_request_;
     /** When true, stay open in IDLE even if canCloseContactors() (set by open cmd). */

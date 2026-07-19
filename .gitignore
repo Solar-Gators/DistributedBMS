@@ -1,8 +1,6 @@
-DistributedBMSDaughter/Debug/
-DistributedBMSDaughter/.settings/
-DistributedBMSSecondary/Debug/
-DistributedBMSSecondary/.settings/
-DistributedBMSPrimary/Debug/
-DistributedBMSPrimary/.settings/
-DistributedBMSPrimaryV2/Debug/
-DistributedBMSPrimaryV2/.settings/
+# STM32CubeIDE build output
+**/Debug/
+**/Release/
+
+# IDE metadata
+.metadata/
